@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>L10N Assistant — Design Review (EN / 中文)</title>
+<meta name="description" content="Screenshots of the AI SaaS Localization Assistant: free localization checker, quality score report and AI translation workspace. English and Chinese UI." />
+<style>
+  :root { --paper:#efede4; --ink:#2d2e2a; --muted:#6b6a63; --rule:#c9c6b8; --blue:#c9d8e4; --pink:#e8cfd1; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font-family:ui-monospace,"SF Mono",Menlo,Consolas,"PingFang SC","Microsoft YaHei",monospace; font-size:13px; line-height:1.6; }
+  header { position:sticky; top:0; z-index:9; background:var(--paper); border-bottom:1px solid var(--ink); padding:10px 20px; display:flex; gap:14px; align-items:baseline; flex-wrap:wrap; }
+  header b { font-size:14px; letter-spacing:.06em; }
+  header .sub { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.12em; }
+  nav { display:flex; gap:0; flex-wrap:wrap; margin-left:auto; align-items:center; }
+  nav .grp { font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding:0 8px; border-left:1px solid var(--rule); }
+  nav a { color:var(--ink); text-decoration:none; font-size:10px; letter-spacing:.04em; padding:4px 8px; border:1px solid var(--rule); margin-left:-1px; }
+  nav a:hover { background:var(--blue); }
+  main { max-width:1520px; margin:0 auto; padding:24px 20px 60px; }
+  section { margin-bottom:36px; border:1px solid var(--ink); background:#f5f3ec; }
+  .cap { display:flex; align-items:baseline; gap:10px; padding:10px 14px; border-bottom:1px solid var(--ink); }
+  .no { font-size:10px; background:var(--ink); color:var(--paper); padding:1px 6px; }
+  .cap h2 { margin:0; font-size:15px; letter-spacing:.03em; }
+  .meta { margin-left:auto; font-size:10px; color:var(--muted); }
+  .desc { margin:0; padding:10px 14px; font-size:11px; color:var(--muted); border-bottom:1px solid var(--rule); }
+  img { display:block; width:100%; height:auto; }
+  .intro { border:1px solid var(--ink); padding:16px 18px; margin-bottom:28px; background:#f5f3ec; }
+  .intro h1 { margin:0 0 8px; font-size:22px; letter-spacing:.02em; }
+  .intro p { margin:0 0 6px; color:var(--muted); font-size:12px; }
+  .intro .note { border-top:1px solid var(--rule); margin-top:12px; padding-top:10px; font-size:11px; background:none; }
+  code { background:#e4e1d7; padding:1px 4px; }
+  footer { border-top:1px solid var(--ink); padding:14px 20px; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.1em; }
+  @media (max-width:720px) { header { gap:8px; } nav { margin-left:0; } .intro h1 { font-size:18px; } }
+</style>
+</head>
+<body>
+<header>
+  <b>L10N ASSISTANT</b>
+  <span class="sub">design review · EN / 中文 · paper #efede4</span>
+  <nav><span class="grp">English</span><a href="#p1">01 Landing Page</a><a href="#p2">02 Localization Checker</a><a href="#p3">03 Diagnostic Report</a><a href="#p4">04 Translation Workspace</a><a href="#p5">05 AI Translation Upload</a><a href="#p6">06 Professional Service</a><span class="grp">中文</span><a href="#p7">07 中文首页</a><a href="#p8">08 本地化检测</a><a href="#p9">09 本地化诊断报告</a><a href="#p10">10 翻译工作台</a><a href="#p11">11 AI 翻译上传</a><a href="#p12">12 专业人工服务</a><a href="#p13">📱 Mobile — 390px</a><a href="#p14">📱 移动端 — 390px</a></nav>
+</header>
+<main>
+  <div class="intro">
+    <h1>AI SaaS Localization Assistant</h1>
+    <p>Free localization quality checker + AI JSON translation workbench + professional human translation lead capture. Two independent products, one account system.</p>
+    <p>免费本地化质量检测 + AI JSON 翻译工作台 + 母语级人工翻译需求承接。两条业务线彼此独立，共用一套账号与 AI 服务。</p>
+    <div class="note">
+      These are real screenshots captured from the running app (Node 22 / Express / SQLite, 46 automated tests).
+      The interactive app is a Node service and cannot run on GitHub Pages — this page is the static design review.
+      Translations shown with ［DE］／［FR］ prefixes are mock-engine output: the app runs offline until a model key is configured.
+    </div>
+  </div>
+  <section id="p1"><div class="cap"><span class="no">01</span><h2>Landing Page</h2><span class="meta">176 KB</span></div><p class="desc">Two independent entries: free Localization Checker and paid AI Translation. Paper texture, ink rules, square corners, monospace labels.</p><img src="shots/01-landing.jpg" alt="Landing Page" loading="lazy" /></section><section id="p2"><div class="cap"><span class="no">02</span><h2>Localization Checker</h2><span class="meta">77 KB</span></div><p class="desc">URL scan / JSON audit tabs, language pickers, crawl-limit notice.</p><img src="shots/02-checker.jpg" alt="Localization Checker" loading="lazy" /></section><section id="p3"><div class="cap"><span class="no">03</span><h2>Diagnostic Report</h2><span class="meta">194 KB</span></div><p class="desc">Score 84/100, five weighted dimensions, issue distribution, 3 real examples in full, remaining issues summarised.</p><img src="shots/03-report.jpg" alt="Diagnostic Report" loading="lazy" /></section><section id="p4"><div class="cap"><span class="no">04</span><h2>Translation Workspace</h2><span class="meta">380 KB</span></div><p class="desc">33 strings x JA/DE/FR, bilingual rows, QA flags per row, export toolbar.</p><img src="shots/04-workspace.jpg" alt="Translation Workspace" loading="lazy" /></section><section id="p5"><div class="cap"><span class="no">05</span><h2>AI Translation Upload</h2><span class="meta">101 KB</span></div><p class="desc">JSON upload / paste, target languages, product context, glossary, brand terms.</p><img src="shots/05-translate-new.jpg" alt="AI Translation Upload" loading="lazy" /></section><section id="p6"><div class="cap"><span class="no">06</span><h2>Professional Service</h2><span class="meta">92 KB</span></div><p class="desc">Lead capture form carrying audit context (score, issue count, scanned pages).</p><img src="shots/06-professional.jpg" alt="Professional Service" loading="lazy" /></section><section id="p7"><div class="cap"><span class="no">07</span><h2>中文首页</h2><span class="meta">154 KB</span></div><p class="desc">双入口：免费本地化检测 + 付费 AI 翻译。纸质底、墨色描边、全直角、等宽标签。</p><img src="shots/zh-01-landing.jpg" alt="中文首页" loading="lazy" /></section><section id="p8"><div class="cap"><span class="no">08</span><h2>本地化检测</h2><span class="meta">68 KB</span></div><p class="desc">网站扫描 / JSON 内容审计两个标签页，语言选择，抓取限额提示。</p><img src="shots/zh-02-checker.jpg" alt="本地化检测" loading="lazy" /></section><section id="p9"><div class="cap"><span class="no">09</span><h2>本地化诊断报告</h2><span class="meta">168 KB</span></div><p class="desc">总分 84/100，五维加权评分，问题分布，3 条真实示例完整展示，其余摘要。</p><img src="shots/zh-03-report.jpg" alt="本地化诊断报告" loading="lazy" /></section><section id="p10"><div class="cap"><span class="no">10</span><h2>翻译工作台</h2><span class="meta">349 KB</span></div><p class="desc">33 条 × 日/德/法，双语对照行，逐行 QA 标记，导出工具条。</p><img src="shots/zh-04-workspace.jpg" alt="翻译工作台" loading="lazy" /></section><section id="p11"><div class="cap"><span class="no">11</span><h2>AI 翻译上传</h2><span class="meta">88 KB</span></div><p class="desc">JSON 上传/粘贴、目标语言、产品背景、术语与品牌词。</p><img src="shots/zh-05-translate.jpg" alt="AI 翻译上传" loading="lazy" /></section><section id="p12"><div class="cap"><span class="no">12</span><h2>专业人工服务</h2><span class="meta">76 KB</span></div><p class="desc">需求表单，自动携带诊断上下文（评分、问题数、已扫描页数）。</p><img src="shots/zh-06-professional.jpg" alt="专业人工服务" loading="lazy" /></section><section id="p13"><div class="cap"><span class="no">13</span><h2>Mobile — 390px</h2><span class="meta">346 KB</span></div><p class="desc">Responsive layout: stacked header, single-column entries.</p><img src="shots/07-mobile.jpg" alt="Mobile — 390px" loading="lazy" /></section><section id="p14"><div class="cap"><span class="no">14</span><h2>移动端 — 390px</h2><span class="meta">286 KB</span></div><p class="desc">窄屏堆叠：单列入口卡片，导航折行。</p><img src="shots/zh-07-mobile.jpg" alt="移动端 — 390px" loading="lazy" /></section>
+</main>
+<footer>L10N ASSISTANT — archive of global shipping · 14 captures</footer>
+</body>
+</html>
