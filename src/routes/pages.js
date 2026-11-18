@@ -1,6 +1,6 @@
 'use strict';
 // Server-rendered pages (template literals, no view engine).
-// All UI copy comes from lib/i18n.js — English is the default, Chinese via ?lang=zh.
+// All UI copy comes from lib/i18n.js — Chinese is the default, English via ?lang=en.
 
 const express = require('express');
 const { LANG_NAMES } = require('../lib/extractor');
@@ -20,7 +20,7 @@ function langHref(url, lang) {
   return `${path}?${params.toString()}`;
 }
 
-function layout({ title, active = '', body, script = '', lang = 'en', path = '/', T }) {
+function layout({ title, active = '', body, script = '', lang = 'zh', path = '/', T }) {
   const other = lang === 'en' ? 'zh' : 'en';
   const nav = [
     ['/', T('nav.home'), ''],
@@ -33,10 +33,10 @@ function layout({ title, active = '', body, script = '', lang = 'en', path = '/'
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="theme-color" content="#efede4" />
+<meta name="theme-color" content="#ffffff" />
 <meta name="description" content="${esc(T('landing.sub'))}" />
 <title>${esc(title)} · L10N ASSISTANT</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23efede4'/%3E%3Crect x='3' y='3' width='26' height='26' fill='none' stroke='%232d2e2a'/%3E%3Ctext x='16' y='21' font-family='monospace' font-size='12' text-anchor='middle' fill='%232d2e2a'%3ELN%3C/text%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%232563eb'/%3E%3Ctext x='16' y='21' font-family='sans-serif' font-weight='700' font-size='11' text-anchor='middle' fill='white'%3ELN%3C/text%3E%3C/svg%3E" />
 <link rel="stylesheet" href="/css/theme.css" />
 </head>
 <body>
@@ -91,26 +91,77 @@ function ctx(req, res) {
 // ── Landing ──────────────────────────────────────────────────────────────
 r.get('/', (req, res) => {
   const { lang, T, path } = ctx(req, res);
+  const dims = ['accuracy', 'naturalness', 'terminology', 'placeholders', 'uiLength'];
+  const previewDims = dims.map((k) => `
+        <div class="preview-dim-row"><span>${esc(T('dim.' + k))}</span>
+          <div class="track"><i style="width:62%"></i></div><b>—</b></div>`).join('');
   res.send(layout({
     lang, T, path,
     title: T('landing.title'),
+    script: '/js/landing.js',
     body: `
-<section class="hero paper">
-  <div class="container" style="position:relative">
-    <div class="index-tag">${esc(T('landing.fileNo'))}</div>
-    <h1>${esc(T('landing.h1a'))}<br /><span class="thin">${esc(T('landing.h1b'))}</span></h1>
-    <p class="sub">${esc(T('landing.sub'))}</p>
-    <div class="cta-row">
-      <a class="btn primary" href="/checker">${esc(T('landing.cta1'))}</a>
-      <a class="btn" href="/translate">${esc(T('landing.cta2'))}</a>
-    </div>
-    <div class="hero-ledger">
-      ${esc(T('landing.ledger1'))}<br />${esc(T('landing.ledger2'))}<br />${esc(T('landing.ledger3'))}<br />${esc(T('landing.ledger4'))}
+<section class="hero">
+  <div class="container">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <div class="index-tag">${esc(T('landing.eyebrow'))}</div>
+        <h1>${esc(T('landing.h1a'))}<br /><span class="thin">${esc(T('landing.h1b'))}</span></h1>
+        <p class="sub">${esc(T('landing.sub'))}</p>
+        <form class="url-form" id="heroUrlForm" autocomplete="off">
+          <input type="url" id="heroUrl" placeholder="${esc(T('landing.urlPlaceholder'))}" aria-label="${esc(T('landing.urlPlaceholder'))}" />
+          <button class="btn primary btn-lg" type="submit">${esc(T('landing.urlSubmit'))} →</button>
+        </form>
+        <div class="small subtle mt-2">${esc(T('landing.urlHint'))}</div>
+        <div class="cta-row">
+          <a class="btn" href="#modes">${esc(T('landing.cta1'))}</a>
+          <a class="btn ghost" href="/translate">${esc(T('landing.cta2'))} →</a>
+        </div>
+        <div class="hero-ledger">
+          <span>${esc(T('landing.ledger1'))}</span>
+          <span>${esc(T('landing.ledger2'))}</span>
+          <span>${esc(T('landing.ledger3'))}</span>
+          <span>${esc(T('landing.ledger4'))}</span>
+        </div>
+      </div>
+
+      <!-- Product UI preview: structure only, no fabricated scores/cases -->
+      <div class="hero-preview" aria-label="${esc(T('landing.previewCaption'))}">
+        <div class="preview-bar"><i></i><i></i><i></i><span class="preview-url">app.l10n.dev /report</span></div>
+        <div class="preview-body">
+          <div class="preview-head">
+            <div>
+              <div class="preview-title">${esc(T('landing.previewTitle'))}</div>
+              <div class="small muted mt-1">en → ja · ${esc(T('rep.auditSource'))}</div>
+            </div>
+            <span class="badge blue">${esc(T('landing.previewTag'))}</span>
+          </div>
+          <div class="preview-ring">
+            <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">
+              <circle class="ring-track" cx="36" cy="36" r="30" />
+            </svg>
+            <div>
+              <div class="ring-num">${esc(T('landing.previewNoScore'))}</div>
+              <div class="small muted">/ 100</div>
+            </div>
+          </div>
+          <div class="preview-dim">${previewDims}</div>
+          <div class="preview-issues">
+            <div class="cell-label">${esc(T('landing.previewIssues'))}</div>
+            <div class="preview-issue-line"><span class="sev high"><i class="sev-dot"></i>${esc(T('sev.high'))}</span>${esc(T('type.missing_translation'))}</div>
+            <div class="preview-issue-line"><span class="sev medium"><i class="sev-dot"></i>${esc(T('sev.medium'))}</span>${esc(T('type.placeholder'))}</div>
+          </div>
+        </div>
+        <div class="preview-caption">${esc(T('landing.previewCaption'))}</div>
+      </div>
     </div>
   </div>
 </section>
 
-<div class="container">
+<div class="container" id="modes">
+  <div class="section-head" style="margin-top:72px">
+    <span class="no">01</span><h2>${esc(T('landing.modeTitle'))}</h2><span class="rule"></span>
+  </div>
+  <p class="muted mb-3" style="max-width:680px">${esc(T('landing.modeSub'))}</p>
   <div class="entries">
     <div class="entry-card paper">
       <span class="card-no">${esc(T('landing.entryA'))}</span>
@@ -125,7 +176,7 @@ r.get('/', (req, res) => {
         <li>${esc(T('landing.a4'))}</li>
         <li>${esc(T('landing.a5'))}</li>
       </ul>
-      <a class="btn primary" href="/checker">${esc(T('landing.aCta'))}</a>
+      <a class="btn primary" href="/checker">${esc(T('landing.aCta'))} →</a>
     </div>
     <div class="entry-card paper">
       <span class="card-no">${esc(T('landing.entryB'))}</span>
@@ -140,19 +191,19 @@ r.get('/', (req, res) => {
         <li>${esc(T('landing.b4'))}</li>
         <li>${esc(T('landing.b5'))}</li>
       </ul>
-      <a class="btn sky" href="/translate">${esc(T('landing.bCta'))}</a>
+      <a class="btn" href="/translate">${esc(T('landing.bCta'))} →</a>
     </div>
   </div>
   <p class="entry-note">${esc(T('landing.entryNote'))}</p>
 
   <section class="section">
-    <div class="section-head"><span class="no">01</span><h2>${esc(T('landing.capTitle'))}</h2><span class="rule"></span></div>
+    <div class="section-head"><span class="no">02</span><h2>${esc(T('landing.capTitle'))}</h2><span class="rule"></span></div>
     <div class="feature-grid">
-      <div class="feature paper"><div class="f-no">CAP / 01</div><h3>${esc(T('landing.cap1T'))}</h3><p>${esc(T('landing.cap1D'))}</p></div>
-      <div class="feature paper"><div class="f-no">CAP / 02</div><h3>${esc(T('landing.cap2T'))}</h3><p>${esc(T('landing.cap2D'))}</p></div>
-      <div class="feature paper"><div class="f-no">CAP / 03</div><h3>${esc(T('landing.cap3T'))}</h3><p>${esc(T('landing.cap3D'))}</p><p style="margin-top:10px">${esc(T('landing.cap3D2'))}</p><p style="margin-top:10px">${esc(T('landing.cap3D3'))}</p></div>
-      <div class="feature paper"><div class="f-no">CAP / 04</div><h3>${esc(T('landing.cap4T'))}</h3><p>${esc(T('landing.cap4D'))}</p></div>
-      <div class="feature paper"><div class="f-no">CAP / 05</div><h3>${esc(T('landing.cap5T'))}</h3><p>${esc(T('landing.cap5D'))}</p></div>
+      <div class="feature paper"><div class="f-no">01</div><h3>${esc(T('landing.cap1T'))}</h3><p>${esc(T('landing.cap1D'))}</p></div>
+      <div class="feature paper"><div class="f-no">02</div><h3>${esc(T('landing.cap2T'))}</h3><p>${esc(T('landing.cap2D'))}</p></div>
+      <div class="feature paper"><div class="f-no">03</div><h3>${esc(T('landing.cap3T'))}</h3><p>${esc(T('landing.cap3D'))}</p><p style="margin-top:10px">${esc(T('landing.cap3D2'))}</p><p style="margin-top:10px">${esc(T('landing.cap3D3'))}</p></div>
+      <div class="feature paper"><div class="f-no">04</div><h3>${esc(T('landing.cap4T'))}</h3><p>${esc(T('landing.cap4D'))}</p></div>
+      <div class="feature paper"><div class="f-no">05</div><h3>${esc(T('landing.cap5T'))}</h3><p>${esc(T('landing.cap5D'))}</p></div>
     </div>
   </section>
 </div>`,
@@ -169,7 +220,7 @@ r.get('/checker', (req, res) => {
     script: '/js/checker.js',
     body: `
 <div class="container" style="padding:48px 0">
-  <div class="section-head"><span class="no">CHK</span><h2>${esc(T('checker.head'))}</h2><span class="rule"></span><span class="badge green">${esc(T('landing.free'))}</span></div>
+  <div class="section-head"><span class="no">01</span><h2>${esc(T('checker.head'))}</h2><span class="rule"></span><span class="badge green">${esc(T('landing.free'))}</span></div>
 
   <div class="pill-tabs" role="tablist">
     <button id="tabWebsite" class="active" type="button">${esc(T('checker.tabWebsite'))}</button>
@@ -262,7 +313,7 @@ r.get('/translate', (req, res) => {
     script: '/js/translate-new.js',
     body: `
 <div class="container" style="padding:48px 0">
-  <div class="section-head"><span class="no">TRN</span><h2>${esc(T('tr.head'))}</h2><span class="rule"></span><span class="badge blue">${esc(T('tr.badge'))}</span></div>
+  <div class="section-head"><span class="no">01</span><h2>${esc(T('tr.head'))}</h2><span class="rule"></span><span class="badge blue">${esc(T('tr.badge'))}</span></div>
   <div class="notice info">
     <b>${esc(T('tr.noticeLabel'))}</b> ${esc(T('tr.notice'))}
   </div>
@@ -426,7 +477,7 @@ r.get('/admin/leads', (req, res) => {
     script: '/js/admin.js',
     body: `
 <div class="container" style="padding:48px 0">
-  <div class="section-head"><span class="no">ADM</span><h2>${esc(T('admin.head'))}</h2><span class="rule"></span></div>
+  <div class="section-head"><span class="no">01</span><h2>${esc(T('admin.head'))}</h2><span class="rule"></span></div>
   <div class="notice warn"><b>${esc(T('admin.restricted'))}</b></div>
   <div class="form-panel paper" style="max-width:420px">
     <div class="field">
@@ -449,7 +500,7 @@ r.get('/admin/settings', (req, res) => {
     script: '/js/admin-settings.js',
     body: `
 <div class="container" style="padding:48px 0">
-  <div class="section-head"><span class="no">CFG</span><h2>${esc(T('cfg.head'))}</h2><span class="rule"></span></div>
+  <div class="section-head"><span class="no">01</span><h2>${esc(T('cfg.head'))}</h2><span class="rule"></span></div>
   <div class="notice warn"><b>${esc(T('cfg.restricted'))}</b></div>
   <div class="form-panel paper" style="max-width:480px">
     <div class="field">

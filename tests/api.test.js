@@ -165,7 +165,7 @@ test('json audit detects residue and placeholder loss, produces score', async ()
     targetJson: { a: 'Create a new workspace', b: 'ようこそ', c: '保存' },
   });
   assert.strictEqual(r.status, 201 === r.status ? 201 : 200, JSON.stringify(r.body));
-  const report = await get(`/api/audit/${r.body.id}`);
+  const report = await get(`/api/audit/${r.body.id}?lang=en`);
   assert.strictEqual(report.status, 200);
   assert.ok(report.body.score != null && report.body.score < 100);
   assert.ok(report.body.issueCount >= 2); // residue + lost {name}
@@ -321,4 +321,11 @@ test('share link: workspace is read-only and cannot be edited', async () => {
 
   const run = await fetch(`${base}/api/translate/jobs/${job.jobId}/run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
   assert.strictEqual(run.status, 403, 'share token must not trigger translation');
+});
+
+test('default UI language is Chinese', async () => {
+  const res = await fetch(`${base}/`);
+  const html = await res.text();
+  assert.match(html, /<html lang="zh-CN">/);
+  assert.match(html, /开始免费检测/);
 });

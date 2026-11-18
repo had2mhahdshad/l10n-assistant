@@ -4,6 +4,15 @@
   var $ = function (id) { return document.getElementById(id); };
   var T = window.T || function (k) { return k; };
 
+  // Prefill from the landing hero URL form (presentation only, no logic change).
+  try {
+    var prefill = sessionStorage.getItem('l10n_prefill_url');
+    if (prefill && $('websiteUrl')) {
+      $('websiteUrl').value = prefill;
+      sessionStorage.removeItem('l10n_prefill_url');
+    }
+  } catch (err) {}
+
   $('tabWebsite').addEventListener('click', function () { switchTab('Website'); });
   $('tabJson').addEventListener('click', function () { switchTab('Json'); });
 
