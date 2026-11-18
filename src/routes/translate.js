@@ -10,6 +10,7 @@ const { translateEntries } = require('../lib/ai/translate');
 const quality = require('../lib/quality');
 const { buildCsv, buildQaReport, streamZip } = require('../lib/export');
 const { remainingTranslateQuota } = require('../lib/quota');
+const { pickLang, translator } = require('../lib/i18n');
 
 const SUPPORTED_TARGETS = ['ja', 'de', 'fr'];
 const SUPPORTED_SOURCES = ['en', 'zh', 'zh-CN'];
@@ -391,8 +392,9 @@ module.exports = function translateRoutes(db) {
 
 function getOwnedJob(db, req, res) {
   const job = db.prepare('SELECT * FROM translation_jobs WHERE id = ?').get(req.params.id);
-  if (!job) { res.status(404).json({ error: 'Job not found.' }); return null; }
-  if (!ownsJob(db, req, job.id, job)) { res.status(403).json({ error: 'Forbidden.' }); return null; }
+  const T = translator(pickLang(req));
+  if (!job) { res.status(404).json({ error: T('err.jobNotFound') }); return null; }
+  if (!ownsJob(db, req, job.id, job)) { res.status(403).json({ error: T('err.readOnlyShare') }); return null; }
   return job;
 }
 
@@ -408,15 +410,16 @@ function safeEqual(a, b) {
 /** Owner session OR valid read-only share token (?t= or x-share-token). */
 function getReadableJob(db, req, res) {
   const job = db.prepare('SELECT * FROM translation_jobs WHERE id = ?').get(req.params.id);
-  if (!job) { res.status(404).json({ error: 'Job not found.' }); return null; }
+  const T = translator(pickLang(req));
+  if (!job) { res.status(404).json({ error: T('err.jobNotFound') }); return null; }
   if (ownsJob(db, req, job.id, job)) return { job, via: 'owner' };
   const token = req.query.t || req.get('x-share-token');
   if (token && job.share_token && safeEqual(String(token), job.share_token)) {
     return { job, via: 'share' };
   }
   res.status(403).json({
-    error: 'You do not have access to this job.',
-    hint: 'Use the share link provided by the project owner, or start your own translation.',
+    error: T('err.jobNoAccess'),
+    hint: T('err.jobNoAccessHint'),
   });
   return null;
 }

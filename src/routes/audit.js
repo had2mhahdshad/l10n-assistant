@@ -112,20 +112,20 @@ module.exports = function auditRoutes(db) {
 
   // Fetch an audit report. Ownership check: anon id or user must match.
   r.get('/api/audit/:id', (req, res) => {
+    const lang = pickLang(req);
+    const T = translator(lang);
     const job = db.prepare('SELECT * FROM audit_jobs WHERE id = ?').get(req.params.id);
-    if (!job) return res.status(404).json({ error: 'Audit not found.' });
+    if (!job) return res.status(404).json({ error: T('err.auditNotFound') });
     const access = canReadAudit(job, req);
     if (!access.ok) {
       return res.status(403).json({
-        error: 'You do not have access to this audit.',
-        hint: 'Use the share link provided by the person who ran this audit, or run your own check.',
+        error: T('err.noAccess'),
+        hint: T('err.noAccessHint'),
       });
     }
     const issues = db.prepare('SELECT * FROM audit_issues WHERE audit_job_id = ? ORDER BY CASE severity WHEN \'high\' THEN 0 WHEN \'medium\' THEN 1 ELSE 2 END, id')
       .all(req.params.id);
 
-    const lang = pickLang(req);
-    const T = translator(lang);
     const full = config.quota.freeReportFullExamples;
     const examples = issues.slice(0, full).map((i) => publicIssue(i, lang));
     const summaries = issues.slice(full).map((i) => ({

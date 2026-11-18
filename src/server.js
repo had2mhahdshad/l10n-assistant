@@ -6,6 +6,7 @@ const express = require('express');
 const config = require('./config');
 const { getDb } = require('./db');
 const anonMiddleware = require('./middleware/anon');
+const { pickLang, translator } = require('./lib/i18n');
 const pagesRoutes = require('./routes/pages');
 const auditRoutes = require('./routes/audit');
 const translateRoutes = require('./routes/translate');
@@ -38,8 +39,9 @@ function createApp() {
 
   // JSON 404 for API, HTML 404 otherwise.
   app.use((req, res) => {
-    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found.' });
-    res.status(404).send('<h1 style="font-family:monospace;padding:40px">404 — page not filed in this archive. <a href="/">Back home</a></h1>');
+    const T = translator(pickLang(req));
+    if (req.path.startsWith('/api/')) return res.status(404).json({ error: T('err.notFound') });
+    res.status(404).send(`<h1 style="font-family:monospace;padding:40px">${T('err.page404')} <a href="/">${T('err.backHome')}</a></h1>`);
   });
 
   // Error handler.
