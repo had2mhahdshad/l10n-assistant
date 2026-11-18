@@ -10,6 +10,14 @@
 
 两条路径不互相依赖：不做免费诊断也能直接用 AI 翻译，不做翻译也能完成免费诊断。任务、数据、额度分别管理，共享用户系统与 AI 服务。
 
+## 双语界面（EN / 中文）
+
+界面默认跟随浏览器语言，可用顶部语言开关或 `?lang=zh` / `?lang=en` 强制切换，选择会写入 Cookie 记住。
+
+- 字典集中在 `src/lib/i18n.js`（`DICT.en` / `DICT.zh`），服务端用 `T()` 渲染，客户端通过 `window.T` 复用同一份文案
+- 中文模式下使用中文断行与字体栈，并关闭西文大写转换，避免中文被强制加字距
+- API 错误文案同样走字典，不会在中文界面里冒英文报错
+
 ## 技术栈
 
 - **Node.js 22 + Express** — 服务端渲染 + JSON API，无构建步骤
@@ -25,7 +33,7 @@ npm install
 cp .env.example .env        # 按需修改
 npm run migrate             # 初始化数据库（首次启动也会自动执行）
 npm start                   # http://localhost:3000
-npm test                    # 38 个单元 + 集成测试
+npm test                    # 46 个单元 + 集成测试
 ```
 
 > 启动脚本使用 `--experimental-sqlite`（Node 22 内置 SQLite 所需标志），已写入 `package.json`，无需手动添加。
