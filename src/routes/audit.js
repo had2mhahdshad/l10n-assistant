@@ -141,6 +141,8 @@ module.exports = function auditRoutes(db) {
       status: job.status,
       error: job.error,
       websiteUrl: job.website_url === '(json upload)' ? T('rep.uploadedJson') : job.website_url,
+      // Raw URL kept separately so the UI can render a clickable link.
+      websiteUrlRaw: job.website_url !== '(json upload)' ? job.website_url : null,
       targetUrl: job.target_url,
       sourceLanguage: job.source_language,
       targetLanguage: job.target_language,
@@ -157,6 +159,7 @@ module.exports = function auditRoutes(db) {
       targetVia: job.target_url && job.website_url === '(json upload)' ? 'json-upload' : null,
       sampleSize: job.sample_size,
       aiDegraded: !!job.ai_degraded,
+      nonTranslatable: job.non_translatable ? JSON.parse(job.non_translatable) : null,
       freeExamples: examples,
       summaries,
       fullExamplesShown: examples.length,
@@ -182,13 +185,15 @@ function persistResult(db, id, result) {
       status='completed', scanned_pages=?, failed_pages=?, discovered_pages=?,
       coverage_note=?, target_url=COALESCE(?, target_url), localization_score=?,
       score_dimensions=?, issue_count=?, severity_dist=?, type_dist=?, sample_size=?,
-      ai_degraded=?, completed_at=?
+      ai_degraded=?, non_translatable=?, completed_at=?
     WHERE id=?`)
     .run(result.scannedPages, result.failedPages, result.discoveredPages,
       result.coverageNote, result.targetUrl || null, result.score.overall,
       JSON.stringify(result.score.dimensions), result.issues.length,
       JSON.stringify(sev), JSON.stringify(typ), result.sampleSize,
-      result.aiDegraded ? 1 : 0, new Date().toISOString(), id);
+      result.aiDegraded ? 1 : 0,
+      result.nonTranslatable ? JSON.stringify(result.nonTranslatable) : null,
+      new Date().toISOString(), id);
 }
 
 function publicIssue(i, lang = 'en') {

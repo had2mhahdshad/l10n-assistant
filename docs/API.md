@@ -38,6 +38,35 @@
 
 返回：总分与五维分数（未检测维度 `score: null, evaluated: false`）、问题数量与严重度/类型分布、扫描页数与覆盖说明、前 N 条完整真实示例（`freeExamples`，N 由 `FREE_REPORT_FULL_EXAMPLES` 配置）、其余问题摘要（`summaries`）、付费边界说明（`paywallNote`）。**不返回全量修复翻译。**
 
+**`nonTranslatable` — 不可翻译内容清单**（仅网站扫描模式，JSON 模式为 `null`）
+
+文本翻译无法覆盖的内容单独统计，不混进问题列表、也不计入评分：
+
+```json
+{
+  "images": 12,
+  "imagesWithoutAlt": 4,
+  "iframes": 2,
+  "canvas": 1,
+  "videos": 0,
+  "svgs": 3,
+  "noTranslateMarked": 1
+}
+```
+
+含义与诚实边界：
+
+| 字段 | 含义 | 为什么文本翻译覆盖不到 |
+|---|---|---|
+| `images` | 页面中的 `<img>` 数量 | 图片里的文字是像素，需要重新出图 |
+| `imagesWithoutAlt` | 其中缺少 `alt` 的图片 | 连替代文本都没有，屏幕阅读器与翻译都拿不到内容 |
+| `iframes` | 内嵌页面数量 | 独立文档，通常跨域，需按 frame 单独本地化 |
+| `canvas` / `videos` | 画布与音视频数量 | 运行时绘制或媒体流，无 DOM 文本 |
+| `svgs` | 内嵌 SVG 数量 | 矢量图形，文字可能已转为路径 |
+| `noTranslateMarked` | `translate="no"` / `.notranslate` 数量 | 站点显式声明不翻译，尊重其意图 |
+
+`websiteUrlRaw` 为原始 URL（`websiteUrl` 在 JSON 模式下是本地化文案），供前端渲染为可点击链接。
+
 ### 只读分享链接（两个模块通用）
 
 每个诊断任务和翻译任务创建时都会生成 `share_token`。访问时可携带 `?t=<share_token>` 或请求头 `x-share-token`：

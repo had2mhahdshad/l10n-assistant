@@ -165,6 +165,16 @@ const MIGRATIONS = [
       UPDATE translation_jobs SET share_token = lower(hex(randomblob(16))) WHERE share_token IS NULL;
     `,
   },
+  {
+    id: 3,
+    name: 'non_translatable_inventory',
+    // Website audits now also count content that text translation cannot
+    // reach (images, iframes, canvas, video, svg, translate="no" blocks),
+    // stored as a JSON blob per audit job.
+    sql: `
+      ALTER TABLE audit_jobs ADD COLUMN non_translatable TEXT;
+    `,
+  },
 ];
 
 let dbInstance = null;

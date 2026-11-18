@@ -13,7 +13,7 @@
 //     complete examples; never ships full fixed translations
 
 const { crawl, safeFetch, validateUrl } = require('../scanner');
-const { extractTextSegments, discoverTargetUrl } = require('../extractor');
+const { extractTextSegments, discoverTargetUrl, extractNonTranslatable, mergeNonTranslatable } = require('../extractor');
 const rules = require('./rules');
 const { computeScore, severityDistribution, typeDistribution } = require('./scorer');
 const { reviewPairs } = require('../ai/translate');
@@ -154,6 +154,11 @@ async function runWebsiteAudit({ websiteUrl, targetUrl, sourceLanguage, targetLa
     default: Math.max(sampleSize, 1),
   });
 
+  // Content that text-based translation can never cover (images, iframes…).
+  const nonTranslatable = mergeNonTranslatable(
+    result.pages.map((p) => extractNonTranslatable(p.html || ''))
+  );
+
   return {
     scannedPages: result.pages.length,
     failedPages: result.failed.length,
@@ -165,6 +170,7 @@ async function runWebsiteAudit({ websiteUrl, targetUrl, sourceLanguage, targetLa
     sampleSize,
     issues,
     score,
+    nonTranslatable,
   };
 }
 
@@ -261,6 +267,7 @@ async function runJsonAudit({ sourceJson, targetJson, sourceLanguage, targetLang
     sampleSize,
     issues,
     score,
+    nonTranslatable: null, // uploaded JSON is pure text — everything is translatable
   };
 }
 

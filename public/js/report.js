@@ -89,7 +89,9 @@
         '<div class="issue-head"><span class="badge ink">EX / ' + (idx + 1) + '</span>' +
         '<span class="itype">' + esc(typeLabel(i.issueType)) + '</span>' +
         '<span class="sev ' + esc(i.severity) + '">' + esc(sevLabel(i.severity)) + '</span>' +
-        (i.pageUrl ? '<span class="ipage">' + esc(i.pageUrl) + '</span>' : '') +
+        (i.pageUrl
+          ? '<a class="btn sm view-page" href="' + esc(i.pageUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(T('rep.viewPage')) + '</a>'
+          : '') +
         (i.context ? '<span class="ipage mono">' + esc(i.context) + '</span>' : '') + '</div>' +
         '<div class="issue-body">' +
         (i.sourceText ? '<div class="issue-cell"><div class="cell-label">' + esc(T('rep.source')) + '</div><pre>' + esc(i.sourceText) + '</pre></div>' : '') +
@@ -102,16 +104,43 @@
     var summaries = (d.summaries || []).slice(0, 30).map(function (s) {
       return '<tr><td>' + esc(typeLabel(s.issueType)) + '</td>' +
         '<td><span class="sev ' + esc(s.severity) + '">' + esc(sevLabel(s.severity)) + '</span></td>' +
-        '<td class="mono small">' + esc(s.pageUrl || s.context || '—') + '</td>' +
+        '<td class="mono small">' +
+          (s.pageUrl
+            ? '<a href="' + esc(s.pageUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(s.pageUrl) + '</a>'
+            : esc(s.context || '—')) + '</td>' +
         '<td class="small muted">' + esc(s.excerpt || '') + '</td></tr>';
     }).join('');
+
+    // Content that text translation can never reach.
+    var nt = d.nonTranslatable;
+    var ntHtml = '';
+    if (nt === null && d.scannedPages === 0) {
+      ntHtml = '<div class="notice tiny">' + esc(T('rep.transJson')) + '</div>';
+    } else if (nt) {
+      var ntRows = [];
+      if (nt.images) ntRows.push([T('rep.transImages'), nt.images + (nt.imagesWithoutAlt ? ' · ' + nt.imagesWithoutAlt + ' ' + T('rep.transImagesNoAlt') : '')]);
+      if (nt.iframes) ntRows.push([T('rep.transIframes'), nt.iframes]);
+      if (nt.canvas) ntRows.push([T('rep.transCanvas'), nt.canvas]);
+      if (nt.videos) ntRows.push([T('rep.transVideos'), nt.videos]);
+      if (nt.svgs) ntRows.push([T('rep.transSvgs'), nt.svgs]);
+      if (nt.noTranslateMarked) ntRows.push([T('rep.transNoTranslate'), nt.noTranslateMarked]);
+      ntHtml = ntRows.length
+        ? '<div class="notice warn tiny"><b>' + esc(T('rep.transDesc')) + '</b><ul class="nt-list">' +
+          ntRows.map(function (r) { return '<li>' + esc(r[0]) + ' — <b>' + esc(String(r[1])) + '</b></li>'; }).join('') + '</ul></div>'
+        : '<div class="notice tiny">' + esc(T('rep.transAll')) + '</div>';
+    }
 
     root.innerHTML = sharedNote +
       '<div class="section-head"><span class="no">RPT</span><h2>' + esc(T('rep.head')) + '</h2><span class="rule"></span>' +
       '<span class="badge ' + b[0] + '">' + esc(b[1]) + '</span></div>' +
 
-      '<div class="muted small mb-3 mono">' + esc(d.websiteUrl) +
-      (d.targetUrl ? ' → ' + esc(d.targetUrl) : '') + ' · ' + esc(d.sourceLanguage) + ' → ' + esc(d.targetLanguage) + '</div>' +
+      '<div class="muted small mb-3 mono">' +
+      (d.websiteUrlRaw
+        ? '<a class="report-url" href="' + esc(d.websiteUrlRaw) + '" target="_blank" rel="noopener noreferrer">' + esc(d.websiteUrlRaw) + '</a>'
+        : esc(d.websiteUrl)) +
+      (d.targetUrl
+        ? ' → <a class="report-url" href="' + esc(d.targetUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(d.targetUrl) + '</a>'
+        : '') + ' · ' + esc(d.sourceLanguage) + ' → ' + esc(d.targetLanguage) + '</div>' +
 
       '<div class="notice warn tiny"><b>' + esc(T('rep.scopeLabel')) + '</b> ' + esc(d.coverageNote || '') + ' ' +
       (d.scannedPages > 0
@@ -121,6 +150,8 @@
       ' · ' + esc(T('rep.samples')) + ' <b>' + (d.sampleSize || 0) + '</b>.' +
       (d.aiDegraded ? ' ' + esc(T('rep.aiDegraded')) : '') +
       '</div>' +
+
+      '<div class="mt-4"><div class="nt-title">' + esc(T('rep.transTitle')) + '</div>' + ntHtml + '</div>' +
 
       '<div class="score-wrap mt-3">' +
       '<div class="score-card paper"><div class="score-label">' + esc(T('rep.overall')) + '</div>' +

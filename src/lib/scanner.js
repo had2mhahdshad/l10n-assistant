@@ -69,6 +69,11 @@ async function validateUrl(raw, { resolve = true } = {}) {
   if (!host) return { ok: false, reason: 'empty-host' };
   if (BLOCKED_HOSTNAMES.has(host)) return { ok: false, reason: 'blocked-hostname' };
 
+  // Opt-in local development escape hatch. Default stays fully restricted;
+  // this must never be enabled in any environment reachable by real users.
+  const allowPrivate = process.env.ALLOW_PRIVATE_TARGETS === '1';
+  if (allowPrivate) return { ok: true, url };
+
   // Literal IP in the URL?
   if (net.isIP(host)) {
     if (isPrivateIp(host)) return { ok: false, reason: 'private-ip' };

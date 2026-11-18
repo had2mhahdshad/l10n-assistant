@@ -135,4 +135,33 @@ function discoverTargetUrl(html, pageUrl, targetLang) {
   return { url: null, via: null, info };
 }
 
-module.exports = { extractTextSegments, extractLanguageInfo, discoverTargetUrl, SUPPORTED_LANGS, LANG_NAMES };
+/**
+ * Inventory page content that CANNOT be covered by text-based translation.
+ * These elements are either non-text (images, canvas, video), isolated
+ * documents (iframes), or explicitly opted out (translate="no", .notranslate).
+ * The checker must surface them honestly instead of silently skipping them.
+ */
+function extractNonTranslatable(html) {
+  const $ = cheerio.load(html);
+  const images = $('img').get();
+  return {
+    images: images.length,
+    imagesWithoutAlt: images.filter((el) => !($(el).attr('alt') || '').trim()).length,
+    iframes: $('iframe').length,
+    canvas: $('canvas').length,
+    videos: $('video, audio').length,
+    svgs: $('svg').length,
+    noTranslateMarked: $('[translate="no"], .notranslate').length,
+  };
+}
+
+function mergeNonTranslatable(list) {
+  const total = { images: 0, imagesWithoutAlt: 0, iframes: 0, canvas: 0, videos: 0, svgs: 0, noTranslateMarked: 0 };
+  for (const item of list) {
+    if (!item) continue;
+    for (const k of Object.keys(total)) total[k] += item[k] || 0;
+  }
+  return total;
+}
+
+module.exports = { extractTextSegments, extractLanguageInfo, discoverTargetUrl, extractNonTranslatable, mergeNonTranslatable, SUPPORTED_LANGS, LANG_NAMES };
