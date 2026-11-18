@@ -1,0 +1,21 @@
+{
+  "name": "l10n-assistant",
+  "version": "0.1.0",
+  "description": "AI SaaS Localization Assistant — free localization checker + AI JSON translation workspace",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --experimental-sqlite --no-warnings src/server.js",
+    "dev": "node --experimental-sqlite --no-warnings --watch src/server.js",
+    "migrate": "node --experimental-sqlite --no-warnings src/db/migrate.js",
+    "test": "node --experimental-sqlite --no-warnings --test \"tests/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "cheerio": "^1.0.0",
+    "express": "^4.21.2"
+  }
+}
