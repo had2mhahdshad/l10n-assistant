@@ -8,6 +8,7 @@ const config = require('../config');
 const { runWebsiteAudit, runJsonAudit, severityDistribution, typeDistribution } = require('../lib/checker/runAudit');
 const { consumeAuditQuota, QuotaError } = require('../lib/quota');
 const { pickLang, translator } = require('../lib/i18n');
+const { getQuotaConfig } = require('../lib/settings');
 
 const SUPPORTED = ['en', 'zh', 'zh-CN', 'ja', 'de', 'fr'];
 
@@ -97,7 +98,7 @@ module.exports = function auditRoutes(db) {
         .run(id, req.userId, req.anonId, websiteUrl || '(json upload)', sourceLanguage, targetLanguage, now, shareToken);
 
       try {
-        const result = await runJsonAudit({ sourceJson, targetJson: targetJson || null, sourceLanguage, targetLanguage });
+        const result = await runJsonAudit({ sourceJson, targetJson: targetJson || null, sourceLanguage, targetLanguage }, db);
         persistResult(db, id, result);
         return res.json({ id, status: 'completed' });
       } catch (err) {
@@ -126,7 +127,7 @@ module.exports = function auditRoutes(db) {
     const issues = db.prepare('SELECT * FROM audit_issues WHERE audit_job_id = ? ORDER BY CASE severity WHEN \'high\' THEN 0 WHEN \'medium\' THEN 1 ELSE 2 END, id')
       .all(req.params.id);
 
-    const full = config.quota.freeReportFullExamples;
+    const full = getQuotaConfig(db).freeReportFullExamples;
     const examples = issues.slice(0, full).map((i) => publicIssue(i, lang));
     const summaries = issues.slice(full).map((i) => ({
       issueType: i.issue_type, severity: i.severity, pageUrl: i.page_url, context: i.context,

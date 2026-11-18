@@ -11,6 +11,7 @@ const pagesRoutes = require('./routes/pages');
 const auditRoutes = require('./routes/audit');
 const translateRoutes = require('./routes/translate');
 const leadRoutes = require('./routes/leads');
+const settingsRoutes = require('./routes/settings');
 
 function createApp() {
   const db = getDb();
@@ -34,6 +35,7 @@ function createApp() {
   app.use(auditRoutes(db));
   app.use(translateRoutes(db));
   app.use(leadRoutes(db));
+  app.use(settingsRoutes(db));
 
   app.get('/api/health', (req, res) => res.json({ ok: true, ai: config.ai.provider }));
 

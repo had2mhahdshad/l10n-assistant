@@ -175,6 +175,19 @@ const MIGRATIONS = [
       ALTER TABLE audit_jobs ADD COLUMN non_translatable TEXT;
     `,
   },
+  {
+    id: 4,
+    name: 'runtime_settings',
+    // Admin-configurable AI provider, scoring rules and quotas. Stored as
+    // JSON rows so new keys do not require another schema migration.
+    sql: `
+      CREATE TABLE app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 let dbInstance = null;

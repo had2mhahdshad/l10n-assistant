@@ -35,8 +35,10 @@ const config = {
   },
 
   quota: {
-    anonAuditDaily: int(process.env.FREE_AUDIT_DAILY_LIMIT_ANON, 3),
-    userAuditMonthly: int(process.env.FREE_AUDIT_MONTHLY_LIMIT_USER, 3),
+    // 0 = unlimited. The free checker is intentionally NOT capped by default;
+    // an admin can still set a limit in /admin/settings if needed.
+    anonAuditDaily: int(process.env.FREE_AUDIT_DAILY_LIMIT_ANON, 0),
+    userAuditMonthly: int(process.env.FREE_AUDIT_MONTHLY_LIMIT_USER, 0),
     freeTranslateStrings: int(process.env.FREE_TRANSLATE_STRINGS, 100),
     translateBatchSize: int(process.env.TRANSLATE_BATCH_SIZE, 20),
     freeReportFullExamples: int(process.env.FREE_REPORT_FULL_EXAMPLES, 3),

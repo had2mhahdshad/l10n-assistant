@@ -440,4 +440,28 @@ r.get('/admin/leads', (req, res) => {
   }));
 });
 
+// ── Admin settings ──────────────────────────────────────────────────────
+r.get('/admin/settings', (req, res) => {
+  const { lang, T, path } = ctx(req, res);
+  res.send(layout({
+    lang, T, path,
+    title: T('cfg.title'),
+    script: '/js/admin-settings.js',
+    body: `
+<div class="container" style="padding:48px 0">
+  <div class="section-head"><span class="no">CFG</span><h2>${esc(T('cfg.head'))}</h2><span class="rule"></span></div>
+  <div class="notice warn"><b>${esc(T('cfg.restricted'))}</b></div>
+  <div class="form-panel paper" style="max-width:480px">
+    <div class="field">
+      <label for="cfgToken">${esc(T('cfg.token'))}</label>
+      <input type="password" id="cfgToken" placeholder="••••••••" autocomplete="off" />
+    </div>
+    <button class="btn primary" id="cfgLoad" type="button">${esc(T('cfg.load'))}</button>
+  </div>
+  <div id="cfgStatus" class="mt-2"></div>
+  <div id="cfgRoot" class="mt-3"></div>
+</div>`,
+  }));
+});
+
 module.exports = r;

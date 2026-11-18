@@ -19,6 +19,7 @@ const { computeScore, severityDistribution, typeDistribution } = require('./scor
 const { reviewPairs } = require('../ai/translate');
 const { parseTranslatable, verifyStructure } = require('../jsonParser');
 const { isResidue, detectLanguage } = require('../languageDetect');
+const { getScoringConfig } = require('../settings');
 
 /**
  * Run a website audit. Throws with .clientMessage for user-facing errors.
@@ -152,7 +153,7 @@ async function runWebsiteAudit({ websiteUrl, targetUrl, sourceLanguage, targetLa
     placeholders: tgtSegments.length,
     uiLength: pairs.length,
     default: Math.max(sampleSize, 1),
-  });
+  }, getScoringConfig(db));
 
   // Content that text-based translation can never cover (images, iframes…).
   const nonTranslatable = mergeNonTranslatable(
@@ -178,7 +179,7 @@ async function runWebsiteAudit({ websiteUrl, targetUrl, sourceLanguage, targetLa
  * Run a JSON content audit (complete content check on uploaded files).
  * scope note: validates file CONTENT, not the live rendered website.
  */
-async function runJsonAudit({ sourceJson, targetJson, sourceLanguage, targetLanguage }) {
+async function runJsonAudit({ sourceJson, targetJson, sourceLanguage, targetLanguage }, db) {
   const sourceEntries = parseTranslatable(sourceJson).filter((e) => e.type === 'string');
   const srcStrings = sourceEntries.filter((e) => e.translatable);
 
@@ -254,7 +255,7 @@ async function runJsonAudit({ sourceJson, targetJson, sourceLanguage, targetLang
     placeholders: Math.max(pairs.length, srcStrings.length),
     uiLength: pairs.length,
     default: Math.max(sampleSize, 1),
-  });
+  }, getScoringConfig(db));
 
   return {
     scannedPages: 0,

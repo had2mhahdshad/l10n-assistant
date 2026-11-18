@@ -395,3 +395,17 @@ a:hover { color: var(--ink); border-bottom-color: var(--ink); }
   border-bottom: 1px solid var(--ink);
 }
 .nt-title::before { content: ""; width: 18px; height: 8px; background: var(--sky-dark); display: block; }
+
+/* ── admin settings console ─────────────────────────────── */
+.cfg-grid { display: grid; gap: 20px; grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 980px) { .cfg-grid { grid-template-columns: 1fr 1fr; } }
+.cfg-grid > section:last-child { grid-column: 1 / -1; }
+.cfg-line { display: grid; grid-template-columns: minmax(140px, 1fr) 110px; gap: 12px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--line-dark); }
+.cfg-line label { font-size: 13px; color: var(--text); margin: 0; }
+.cfg-line input, .cfg-line select { font-size: 13px; }
+.cfg-grid section { padding: 20px 22px; }
+.cfg-grid .nt-title { margin-bottom: 12px; }
+.cfg-grid details { border: 1px solid var(--line); padding: 10px 14px; background: var(--cream); }
+.cfg-grid details summary { cursor: pointer; font-size: 13px; font-weight: 700; }
+.cfg-grid .hint { font-size: 11px; color: var(--subtle); margin: 8px 0 4px; }
+@media (max-width: 480px) { .cfg-line { grid-template-columns: 1fr; } }

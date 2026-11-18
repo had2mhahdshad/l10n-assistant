@@ -8,6 +8,16 @@
 // Both return { content, usage: {promptTokens, completionTokens, totalTokens}, model, mock }.
 
 const config = require('../../config');
+const settings = require('../settings');
+
+/** Effective AI config: env defaults overridable by the admin settings page. */
+function ai() {
+  try {
+    return settings.getAiConfig();
+  } catch {
+    return { ...config.ai, temperature: 0.2 };
+  }
+}
 
 // Approximate token counting (≈4 chars/token latin, ≈1.5/token CJK).
 function estimateTokens(text) {
@@ -18,31 +28,33 @@ function estimateTokens(text) {
 }
 
 async function chat(messages, { json = false, timeoutMs, maxRetries } = {}) {
-  const provider = config.ai.provider;
-  if (provider === 'openai') {
-    return openaiChat(messages, { json, timeoutMs, maxRetries });
+  const cfg = ai();
+  if (cfg.provider === 'openai') {
+    return openaiChat(messages, { json, timeoutMs: timeoutMs ?? cfg.timeoutMs, maxRetries: maxRetries ?? cfg.maxRetries, cfg });
   }
   return mockChat(messages, { json });
 }
 
-async function openaiChat(messages, { json, timeoutMs = config.ai.timeoutMs, maxRetries = config.ai.maxRetries } = {}) {
-  if (!config.ai.apiKey) throw new Error('AI_API_KEY is not configured');
+async function openaiChat(messages, { json, timeoutMs, maxRetries, cfg = ai() } = {}) {
+  if (!cfg.apiKey) throw new Error('AI_API_KEY is not configured');
+  timeoutMs = timeoutMs ?? cfg.timeoutMs;
+  maxRetries = maxRetries ?? cfg.maxRetries;
   let lastErr;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(`${config.ai.baseUrl}/chat/completions`, {
+      const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
         method: 'POST',
         signal: controller.signal,
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${config.ai.apiKey}`,
+          authorization: `Bearer ${cfg.apiKey}`,
         },
         body: JSON.stringify({
-          model: config.ai.model,
+          model: cfg.model,
           messages,
-          temperature: 0.2,
+          temperature: cfg.temperature,
           ...(json ? { response_format: { type: 'json_object' } } : {}),
         }),
       });
@@ -56,7 +68,7 @@ async function openaiChat(messages, { json, timeoutMs = config.ai.timeoutMs, max
         ? { promptTokens: data.usage.prompt_tokens, completionTokens: data.usage.completion_tokens, totalTokens: data.usage.total_tokens }
         : { promptTokens: estimateTokens(messages.map((m) => m.content).join('')), completionTokens: estimateTokens(content), totalTokens: 0 };
       if (!usage.totalTokens) usage.totalTokens = usage.promptTokens + usage.completionTokens;
-      return { content, usage, model: config.ai.model, mock: false };
+      return { content, usage, model: cfg.model, mock: false };
     } catch (err) {
       lastErr = err;
       if (attempt < maxRetries) await sleep(500 * (attempt + 1) ** 2);

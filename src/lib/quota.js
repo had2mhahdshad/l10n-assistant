@@ -3,7 +3,7 @@
 // Anonymous devices are identified by a signed-ish random cookie id.
 
 const crypto = require('crypto');
-const config = require('../config');
+const { getQuotaConfig } = require('./settings');
 
 function newAnonId() {
   return 'anon_' + crypto.randomBytes(16).toString('hex');
@@ -31,16 +31,18 @@ function parseCookies(header) {
   return out;
 }
 
-/** Check & consume one free-audit credit. Throws QuotaError when exceeded. */
+/** Check & consume one free-audit credit. Throws QuotaError when exceeded.
+ *  limit <= 0 means "no cap" — the default for the free checker. */
 function consumeAuditQuota(db, { userId, anonId }) {
+  const q = getQuotaConfig(db);
   if (userId) {
     const monthStart = new Date();
     monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
     const row = db.prepare(
       "SELECT COUNT(*) AS n FROM audit_jobs WHERE user_id = ? AND created_at >= ?"
     ).get(userId, monthStart.toISOString());
-    if (row.n >= config.quota.userAuditMonthly) {
-      throw new QuotaError(`Monthly free check limit reached (${config.quota.userAuditMonthly}).`);
+    if (q.userAuditMonthly > 0 && row.n >= q.userAuditMonthly) {
+      throw new QuotaError(`Monthly free check limit reached (${q.userAuditMonthly}).`);
     }
     return;
   }
@@ -49,8 +51,8 @@ function consumeAuditQuota(db, { userId, anonId }) {
   const row = db.prepare(
     "SELECT COUNT(*) AS n FROM audit_jobs WHERE anon_id = ? AND user_id IS NULL AND created_at >= ?"
   ).get(anonId, dayStart.toISOString());
-  if (row.n >= config.quota.anonAuditDaily) {
-    throw new QuotaError(`Daily free check limit reached (${config.quota.anonAuditDaily}/day per device). Please try again tomorrow or sign in.`);
+  if (q.anonAuditDaily > 0 && row.n >= q.anonAuditDaily) {
+    throw new QuotaError(`Daily free check limit reached (${q.anonAuditDaily}/day per device). Please try again tomorrow or sign in.`);
   }
 }
 
@@ -64,7 +66,7 @@ function remainingTranslateQuota(db, { userId, anonId }) {
      WHERE ${where}`
   ).get(arg);
   const used = row.used || 0;
-  return Math.max(0, config.quota.freeTranslateStrings - used);
+  return Math.max(0, getQuotaConfig(db).freeTranslateStrings - used);
 }
 
 class QuotaError extends Error {

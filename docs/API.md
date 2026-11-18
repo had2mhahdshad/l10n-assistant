@@ -81,6 +81,26 @@
 页面层：`/report/:id?t=<token>`、`/translate/jobs/:id?t=<token>`。分享视图会显示只读横幅，翻译工作台隐藏编辑与重译按钮、单元格置为 `readonly`，导出链接自动带上 token。
 
 
+### `/api/admin/settings` — 运行时配置（仅管理员）
+
+全部接口要求 `x-admin-token` 请求头（或 `?token=`），不匹配返回 `401`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/admin/settings` | 当前配置。**API Key 永不回传**，只有 `apiKeySet` 布尔值与 `apiKeyHint` 掩码（`••••` + 末 4 位） |
+| `GET` | `/api/admin/settings/meta` | 表单结构：维度键、问题类型键、环境变量默认值 |
+| `PUT` | `/api/admin/settings` | 部分更新 `{ ai?, scoring?, quota? }`，非法值返回 `400`；`apiKey` 留空/`__KEEP__` 表示不改，`__CLEAR__` 表示清空 |
+| `POST` | `/api/admin/settings/reset` | 恢复环境变量默认值 |
+| `POST` | `/api/admin/settings/preview` | 用草稿评分规则对固定样例（4 问题 / 100 样本）计分，**不落库**，用于预览权重变化 |
+| `POST` | `/api/admin/settings/test-ai` | 用当前配置真实调用一次 AI 服务，返回 `{ ok, provider, model, mock, latencyMs, error? }` |
+
+配置修改**立即生效**（进程内缓存按数据库实例隔离），无需重启：
+
+- `ai`：`provider`（mock/openai）、`baseUrl`、`model`、`apiKey`、`temperature`、`timeoutMs`、`maxRetries`
+- `scoring`：五维权重（保存时自动归一化到 1）、严重度权重、罚分模型（`rateFactor`/`countUnit`/`absoluteCap`）、问题类型→维度映射
+- `quota`：`anonAuditDaily` / `userAuditMonthly`（**0 = 不限制**，免费检查默认不限次）、`freeReportFullExamples`、`freeTranslateStrings`
+
+
 ## AI Translation（付费翻译模块）
 
 ### `POST /api/translate/jobs` — 创建翻译任务

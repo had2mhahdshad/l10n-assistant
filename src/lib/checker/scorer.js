@@ -55,21 +55,28 @@ const ISSUE_DIMENSION = {
  * @param {Number|Object} samples  total samples, or per-dimension counts
  *        { accuracy: 500, naturalness: 2900, terminology: 500, ... , default: n }
  */
-function computeScore(issues, evaluated, samples = 0) {
+function computeScore(issues, evaluated, samples = 0, overrides = null) {
+  // Admin-configurable rules are injected as overrides; the module stays a
+  // pure function so existing tests and callers keep their default behaviour.
+  const dims = overrides?.dimensions || DIMENSIONS;
+  const sevW = overrides?.severityWeight || SEVERITY_WEIGHT;
+  const model = overrides?.model || SCORE_MODEL;
+  const issueDim = overrides?.issueDimension || ISSUE_DIMENSION;
+
   const samplesFor = (dim) =>
     typeof samples === 'number' ? samples : (samples[dim] ?? samples.default ?? 0);
 
   const counts = {};
-  for (const dim of Object.keys(DIMENSIONS)) counts[dim] = 0;
+  for (const dim of Object.keys(dims)) counts[dim] = 0;
 
   for (const issue of issues) {
-    const dim = ISSUE_DIMENSION[issue.issueType];
-    if (!dim) continue;
-    counts[dim] += SEVERITY_WEIGHT[issue.severity] ?? SEVERITY_WEIGHT.low;
+    const dim = issueDim[issue.issueType];
+    if (!dim || !(dim in counts)) continue;
+    counts[dim] += sevW[issue.severity] ?? sevW.low;
   }
 
   const dimensions = {};
-  for (const [dim, meta] of Object.entries(DIMENSIONS)) {
+  for (const [dim, meta] of Object.entries(dims)) {
     if (evaluated[dim] === false) {
       dimensions[dim] = { score: null, label: meta.label, weight: meta.weight, evaluated: false };
       continue;
@@ -79,7 +86,7 @@ function computeScore(issues, evaluated, samples = 0) {
     const rate = weighted / n;
     const penalty = Math.min(
       100,
-      rate * SCORE_MODEL.rateFactor + Math.min(SCORE_MODEL.absoluteCap, weighted * SCORE_MODEL.countUnit),
+      rate * model.rateFactor + Math.min(model.absoluteCap, weighted * model.countUnit),
     );
     dimensions[dim] = {
       score: Math.max(0, Math.round(100 - penalty)),
