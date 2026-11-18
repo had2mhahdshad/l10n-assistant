@@ -71,7 +71,7 @@ Free + Paid 额度（全部后台可配，不硬编码）：
 
 | 路径 | 说明 |
 |---|---|
-| `/` | Landing，两个独立入口（Check My Website / Translate JSON Files） |
+| `/` | Landing，首屏内嵌免费检测（网站 URL / 上传 JSON 文件），附「如何获取全站文案 JSON」引导 |
 | `/checker` | 免费诊断：Website Scan 与 JSON Content Audit 两个标签页 |
 | `/report/:id` | 诊断报告：评分、维度、问题分布、真实示例（前 N 条完整展示）、专业译者 CTA |
 | `/translate` | 创建翻译任务（粘贴/上传 JSON，上下文、术语、品牌词、忽略规则） |

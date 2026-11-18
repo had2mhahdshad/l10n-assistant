@@ -331,6 +331,44 @@ test('default UI language is Chinese', async () => {
   assert.match(html, /开始免费检测/);
 });
 
+test('home exposes the inline free check, JSON file upload and the copy-export guide', async () => {
+  const home = await fetch(`${base}/`).then((r) => r.text());
+  // The free check runs directly on the landing page (no navigation needed).
+  assert.match(home, /id="freeCheck"/);
+  assert.match(home, /id="fcTabUrl"/);
+  assert.match(home, /id="fcTabJson"/);
+  assert.match(home, /id="fcRun"/);
+  assert.match(home, /开始免费检测/);
+  assert.match(home, /免费检测 · 无需注册 · 不设次数上限/);
+  // JSON upload is a real file input, not just a paste box.
+  assert.match(home, /id="fcFile"/);
+  assert.match(home, /data-json-target="fcJson"/);
+  assert.match(home, /accept="\.json,application\/json"/);
+  assert.match(home, /id="fcJsonTarget"/);
+  // The guide explains how to obtain a full-copy JSON, with an honest scope note.
+  assert.match(home, /id="jsonGuide"/);
+  assert.match(home, /如何获取网站中所有文案的 JSON 文件/);
+  assert.match(home, /网站扫描无法自动导出全站文案/);
+  assert.match(home, /locales\/en\.json/);
+  assert.match(home, /\/js\/free-check\.js/);
+
+  const checker = await fetch(`${base}/checker?lang=zh`).then((r) => r.text());
+  assert.match(checker, /id="ckFileSrc"/);
+  assert.match(checker, /data-json-target="jsonSource"/);
+  assert.match(checker, /data-json-target="jsonTarget"/);
+  assert.match(checker, /id="jsonGuide"/);
+  assert.match(checker, /\/js\/free-check\.js/);
+
+  const en = await fetch(`${base}/?lang=en`).then((r) => r.text());
+  assert.match(en, /Upload JSON file/);
+  assert.match(en, /How do I get a JSON file with all my website copy\?/);
+  assert.match(en, /FREE CHECK · No sign-up · No cap/);
+
+  const script = await fetch(`${base}/js/free-check.js`).then((r) => r.text());
+  assert.match(script, /\/api\/audit\/json/);
+  assert.match(script, /data-json-target/);
+});
+
 // ── Website URL translation + per-job Free quota + fonts ─────────────────
 
 test('website URL translation yields standard JSON with honest scan coverage', async () => {

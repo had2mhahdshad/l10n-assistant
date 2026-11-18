@@ -71,7 +71,7 @@ function layout({ title, active = '', body, script = '', lang = 'zh', path = '/'
   </footer>
 </div>
 <script>window.__LANG__=${JSON.stringify(lang)};window.__D__=${JSON.stringify(clientDict(lang))};window.T=function(k){return (window.__D__&&window.__D__[k]!=null)?window.__D__[k]:k};</script>
-${script ? `<script src="${script}"></script>` : ''}
+${(Array.isArray(script) ? script : (script ? [script] : [])).map((s) => `<script src="${s}"></script>`).join('\n')}
 </body>
 </html>`;
 }
@@ -89,6 +89,130 @@ function ctx(req, res) {
   return { lang, T: translator(lang), path: req.originalUrl || req.path };
 }
 
+/** Dictionary strings are trusted server-side constants. Guide copy carries a
+ *  few inline <code>/<b> tags, so it is rendered without HTML escaping. */
+function raw(s) { return s; }
+
+/** File dropzone wired by /js/free-check.js through data-* attributes. */
+function dropzoneHtml(T, { zoneId, inputId, labelId, targetId, title, compact = false }) {
+  return `
+      <div class="dropzone${compact ? ' compact' : ''}" id="${zoneId}">
+        <input class="dz-input" type="file" id="${inputId}" accept=".json,application/json"
+               data-json-target="${targetId}" data-file-label="${labelId}" aria-label="${esc(title)}" />
+        ${compact ? '' : '<div class="dz-icon" aria-hidden="true">{ }</div>'}
+        <div class="dz-title">${esc(title)}</div>
+        <div class="dz-hint">${esc(T('free.dropHint'))}</div>
+        <div class="dz-file" id="${labelId}"></div>
+      </div>`;
+}
+
+/** Reusable "how do I get a full-copy JSON" guide — home + checker pages. */
+function jsonGuideHtml(T) {
+  const step = (n, titleKey, descKey) => `
+        <li class="g-step">
+          <span class="g-step-no">${String(n).padStart(2, '0')}</span>
+          <div><h4>${esc(T(titleKey))}</h4><p>${raw(T(descKey))}</p></div>
+        </li>`;
+  const example = `{
+  "nav": { "home": "Home", "pricing": "Pricing" },
+  "cta": { "start": "Get started for free" },
+  "errors": ["Invalid email", "Network unavailable"]
+}`;
+  return `
+<details class="json-guide" id="jsonGuide">
+  <summary>
+    <span class="g-ico" aria-hidden="true">?</span>
+    <span class="g-summary-copy">
+      <b>${esc(T('guide.summary'))}</b>
+      <small>${esc(T('guide.summarySub'))}</small>
+    </span>
+    <span class="g-open">${esc(T('guide.open'))}</span>
+  </summary>
+  <div class="g-body">
+    <div class="notice warn"><b>${esc(T('guide.whyTitle'))}：</b>${raw(T('guide.why'))}</div>
+    <div class="g-section-title">${esc(T('guide.stepsTitle'))}</div>
+    <ol class="g-steps">
+      ${step(1, 'guide.s1T', 'guide.s1D')}${step(2, 'guide.s2T', 'guide.s2D')}${step(3, 'guide.s3T', 'guide.s3D')}${step(4, 'guide.s4T', 'guide.s4D')}${step(5, 'guide.s5T', 'guide.s5D')}
+    </ol>
+    <div class="g-two">
+      <div>
+        <div class="g-section-title">${esc(T('guide.formatTitle'))}</div>
+        <ul class="g-format">
+          <li>${esc(T('guide.f1'))}</li>
+          <li>${esc(T('guide.f2'))}</li>
+          <li>${esc(T('guide.f3'))}</li>
+          <li>${esc(T('guide.f4'))}</li>
+        </ul>
+      </div>
+      <div>
+        <div class="g-section-title">${esc(T('guide.exampleTitle'))}</div>
+        <pre class="g-example">${esc(example)}</pre>
+      </div>
+    </div>
+    <div class="small subtle mt-2">${esc(T('guide.note'))}</div>
+  </div>
+</details>`;
+}
+
+/** Inline free check on the landing hero: URL scan OR JSON file upload. */
+function freeCheckHtml(T) {
+  const srcOpts = langOptions(['en', 'zh', 'ja', 'de', 'fr'], 'en');
+  const tgtOpts = langOptions(['ja', 'de', 'fr', 'en', 'zh'], 'ja');
+  const drop = (zoneId, inputId, labelId, targetId, title) =>
+    dropzoneHtml(T, { zoneId, inputId, labelId, targetId, title });
+  return `
+<div class="free-check" id="freeCheck">
+  <div class="fc-head">
+    <span class="badge green">${esc(T('landing.free'))}</span>
+    <div class="fc-head-copy">
+      <div class="fc-title">${esc(T('free.title'))}</div>
+      <div class="fc-sub">${esc(T('free.sub'))}</div>
+    </div>
+  </div>
+  <div class="pill-tabs fc-tabs" role="tablist">
+    <button id="fcTabUrl" class="active" type="button">${esc(T('free.tabUrl'))}</button>
+    <button id="fcTabJson" type="button">${esc(T('free.tabJson'))}</button>
+  </div>
+  <div id="fcPaneUrl" class="fc-pane">
+    <div class="field">
+      <label for="fcUrl"><b>${esc(T('free.urlLabel'))}</b></label>
+      <input type="url" id="fcUrl" placeholder="${esc(T('free.urlPh'))}" autocomplete="off" />
+      <div class="hint">${esc(T('free.urlHint'))}</div>
+    </div>
+  </div>
+  <div id="fcPaneJson" class="fc-pane hidden">
+    ${drop('fcDrop', 'fcFile', 'fcFileName', 'fcJson', T('free.dropTitle'))}
+    <details class="fc-paste">
+      <summary>${esc(T('free.pasteToggle'))}</summary>
+      <textarea id="fcJson" spellcheck="false" placeholder='{"nav":{"home":"Home"}}'></textarea>
+    </details>
+    <details class="fc-optional">
+      <summary>${esc(T('free.targetOptional'))}</summary>
+      <div class="hint mb-2">${esc(T('free.targetOptionalHint'))}</div>
+      ${drop('fcDropTarget', 'fcFileTarget', 'fcFileNameTarget', 'fcJsonTarget', T('free.dropTitle'))}
+      <textarea id="fcJsonTarget" spellcheck="false" placeholder='{"nav":{"home":"ホーム"}}'></textarea>
+    </details>
+  </div>
+  <div class="field-row cols-2 fc-langs">
+    <div class="field">
+      <label for="fcSrcLang"><b>${esc(T('checker.srcLang'))}</b></label>
+      <select id="fcSrcLang">${srcOpts}</select>
+    </div>
+    <div class="field">
+      <label for="fcTgtLang"><b>${esc(T('checker.tgtLang'))}</b></label>
+      <select id="fcTgtLang">${tgtOpts}</select>
+    </div>
+  </div>
+  <button class="btn primary btn-lg fc-run" id="fcRun" type="button">${esc(T('free.runUrl'))} →</button>
+  <div class="fc-foot">
+    <button class="btn ghost sm" type="button" data-open-guide="1">${esc(T('free.guideCta'))}</button>
+    <a class="btn ghost sm" href="/checker">${esc(T('free.advanced'))} →</a>
+  </div>
+  <div class="fc-note">${esc(T('free.scopeNote'))}</div>
+  <div id="fcStatus"></div>
+</div>`;
+}
+
 // ── Landing ──────────────────────────────────────────────────────────────
 r.get('/', (req, res) => {
   const { lang, T, path } = ctx(req, res);
@@ -99,24 +223,16 @@ r.get('/', (req, res) => {
   res.send(layout({
     lang, T, path,
     title: T('landing.title'),
-    script: '/js/landing.js',
+    script: ['/js/free-check.js'],
     body: `
 <section class="hero">
   <div class="container">
     <div class="hero-grid">
       <div class="hero-copy">
-        <div class="index-tag">${esc(T('landing.eyebrow'))}</div>
+        <div class="index-tag">${esc(T('free.eyebrow'))}</div>
         <h1>${esc(T('landing.h1a'))}<br /><span class="thin">${esc(T('landing.h1b'))}</span></h1>
         <p class="sub">${esc(T('landing.sub'))}</p>
-        <form class="url-form" id="heroUrlForm" autocomplete="off">
-          <input type="url" id="heroUrl" placeholder="${esc(T('landing.urlPlaceholder'))}" aria-label="${esc(T('landing.urlPlaceholder'))}" />
-          <button class="btn primary btn-lg" type="submit">${esc(T('landing.urlSubmit'))} →</button>
-        </form>
-        <div class="small subtle mt-2">${esc(T('landing.urlHint'))}</div>
-        <div class="cta-row">
-          <a class="btn" href="#modes">${esc(T('landing.cta1'))}</a>
-          <a class="btn ghost" href="/translate">${esc(T('landing.cta2'))} →</a>
-        </div>
+        ${freeCheckHtml(T)}
         <div class="hero-ledger">
           <span>${esc(T('landing.ledger1'))}</span>
           <span>${esc(T('landing.ledger2'))}</span>
@@ -157,6 +273,10 @@ r.get('/', (req, res) => {
     </div>
   </div>
 </section>
+
+<div class="container guide-wrap" id="json-guide">
+  ${jsonGuideHtml(T)}
+</div>
 
 <div class="container" id="modes">
   <div class="section-head" style="margin-top:72px">
@@ -218,7 +338,7 @@ r.get('/checker', (req, res) => {
     lang, T, path,
     title: T('checker.title'),
     active: 'checker',
-    script: '/js/checker.js',
+    script: ['/js/free-check.js', '/js/checker.js'],
     body: `
 <div class="container" style="padding:48px 0">
   <div class="section-head"><span class="no">01</span><h2>${esc(T('checker.head'))}</h2><span class="rule"></span><span class="badge green">${esc(T('landing.free'))}</span></div>
@@ -265,10 +385,12 @@ r.get('/checker', (req, res) => {
       </div>
       <div class="field">
         <label for="jsonSource"><b>${esc(T('checker.srcJson'))}</b></label>
+        ${dropzoneHtml(T, { zoneId: 'ckDropSrc', inputId: 'ckFileSrc', labelId: 'ckFileNameSrc', targetId: 'jsonSource', title: T('free.dropTitle'), compact: true })}
         <textarea id="jsonSource" placeholder='{"nav": {"home": "Home", "pricing": "Pricing"}}' spellcheck="false"></textarea>
       </div>
       <div class="field">
         <label for="jsonTarget">${esc(T('checker.tgtJson'))}</label>
+        ${dropzoneHtml(T, { zoneId: 'ckDropTgt', inputId: 'ckFileTgt', labelId: 'ckFileNameTgt', targetId: 'jsonTarget', title: T('free.dropTitle'), compact: true })}
         <textarea id="jsonTarget" placeholder='{"nav": {"home": "ホーム", "pricing": "料金"}}' spellcheck="false"></textarea>
       </div>
       <div class="field-row cols-2">
@@ -283,6 +405,8 @@ r.get('/checker', (req, res) => {
       </div>
       <button class="btn primary" id="runJson" type="button">${esc(T('checker.runAudit'))}</button>
     </div>
+    <button class="btn ghost sm mt-2" type="button" data-open-guide="1">${esc(T('free.guideCta'))}</button>
+    <div class="mt-2">${jsonGuideHtml(T)}</div>
   </div>
 
   <div id="checkerStatus" class="mt-3"></div>
