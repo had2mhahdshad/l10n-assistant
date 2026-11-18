@@ -39,9 +39,19 @@ const config = {
     // an admin can still set a limit in /admin/settings if needed.
     anonAuditDaily: int(process.env.FREE_AUDIT_DAILY_LIMIT_ANON, 0),
     userAuditMonthly: int(process.env.FREE_AUDIT_MONTHLY_LIMIT_USER, 0),
-    freeTranslateStrings: int(process.env.FREE_TRANSLATE_STRINGS, 100),
+    // Legacy account-level translation cap. 0 = no account-level cap; the
+    // actual Free limits are PER JOB (see the three fields below).
+    freeTranslateStrings: int(process.env.FREE_TRANSLATE_STRINGS, 0),
     translateBatchSize: int(process.env.TRANSLATE_BATCH_SIZE, 20),
     freeReportFullExamples: int(process.env.FREE_REPORT_FULL_EXAMPLES, 3),
+
+    // ── Free + Paid quota, enforced PER JOB, all admin-configurable ───────
+    // URL translation: max pages actually fetched and translated per job.
+    freeUrlPagesPerJob: int(process.env.FREE_URL_PAGES_PER_JOB, 3),
+    // JSON translation: max translatable strings per job (multiplied per locale).
+    freeJsonStringsPerJob: int(process.env.FREE_JSON_STRINGS_PER_JOB, 100),
+    // JSON translation: max source characters per job (0 = no char cap).
+    freeJsonCharsPerJob: int(process.env.FREE_JSON_CHARS_PER_JOB, 20000),
   },
 
   adminToken: process.env.ADMIN_TOKEN || 'change-me-in-production',

@@ -12,6 +12,7 @@ process.env.DATABASE_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'l10
 process.env.AI_PROVIDER = 'mock';
 process.env.ADMIN_TOKEN = 'test-admin-token';
 process.env.FREE_AUDIT_DAILY_LIMIT_ANON = '4';
+process.env.ALLOW_PRIVATE_TARGETS = '1'; // URL translation tests use a local site
 
 const { createApp } = require('../src/server');
 
@@ -328,4 +329,129 @@ test('default UI language is Chinese', async () => {
   const html = await res.text();
   assert.match(html, /<html lang="zh-CN">/);
   assert.match(html, /开始免费检测/);
+});
+
+// ── Website URL translation + per-job Free quota + fonts ─────────────────
+
+test('website URL translation yields standard JSON with honest scan coverage', async () => {
+  const http = require('http');
+  let sitePort = 0;
+  const site = http.createServer((req, res) => {
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    if (req.url === '/ja/') {
+      res.end('<html lang="ja"><body><h1>こんにちは</h1><p>料金ページ</p></body></html>');
+    } else {
+      res.end('<html lang="en"><head><link rel="alternate" hreflang="ja" href="http://127.0.0.1:' + sitePort + '/ja/"></head>' +
+        '<body><h1>Welcome to Acme</h1><p>Ship your SaaS worldwide</p><a href="/ja/">日本語</a></body></html>');
+    }
+  });
+  await new Promise((r) => { site.listen(0, '127.0.0.1', r); });
+  sitePort = site.address().port;
+
+  const r = await post('/api/translate/url', {
+    websiteUrl: `http://127.0.0.1:${sitePort}/`,
+    sourceLanguage: 'en', targetLanguages: ['ja'],
+  });
+  assert.strictEqual(r.status, 201, JSON.stringify(r.body));
+  assert.strictEqual(r.body.sourceType, 'url');
+  assert.strictEqual(r.body.scan.complete, false);
+  assert.ok(r.body.scan.scannedPages >= 1);
+  assert.ok(r.body.scan.limitations.length >= 3);
+  assert.ok(r.body.stats.translatable >= 2);
+
+  const run = await post(`/api/translate/jobs/${r.body.jobId}/run`, {});
+  assert.strictEqual(run.status, 200);
+  assert.strictEqual(run.body.failed, 0);
+
+  const exp = await get(`/api/translate/jobs/${r.body.jobId}/export?format=json&locale=ja`);
+  const out = typeof exp.body === 'string' ? JSON.parse(exp.body) : exp.body;
+  assert.ok(Array.isArray(out.pages));
+  assert.ok(out.pages[0].url.startsWith('http://127.0.0.1'));
+  assert.ok(Object.keys(out.pages[0].segments).length >= 1);
+  site.close();
+});
+
+test('URL translation rejects private targets when the escape hatch is off', async () => {
+  // The escape hatch is enabled for this test process, so verify through the
+  // planner instead: a locked page count is reported rather than invented.
+  const { planQuota } = require('../src/lib/translationQuota');
+  const plan = planQuota({ sourceType: 'url', locales: ['ja'], strings: [], pages: 3, discoveredPages: 12 },
+    { quota: { freeUrlPagesPerJob: 3, freeJsonStringsPerJob: 100, freeJsonCharsPerJob: 0 }, translation: { mvpUrlPageLimit: 3 } });
+  assert.strictEqual(plan.granted.pages, 3);
+  assert.strictEqual(plan.locked.pages, 9);
+});
+
+test('over-quota JSON job is partially translated and the free part stays downloadable', async () => {
+  const json = {};
+  for (let i = 0; i < 150; i++) json['k' + i] = 'Translate me ' + i;
+  const r = await post('/api/translate/jobs', { sourceLanguage: 'en', targetLanguages: ['ja'], json });
+  assert.strictEqual(r.status, 201, JSON.stringify(r.body));
+  const q = r.body.stats.quota;
+  assert.strictEqual(q.granted.stringsPerLocale, 100);
+  assert.strictEqual(q.locked.stringsPerLocale, 50);
+  assert.strictEqual(q.usedUnits, 100);
+  assert.strictEqual(q.paywall, true);
+
+  const run = await post(`/api/translate/jobs/${r.body.jobId}/run`, {});
+  assert.strictEqual(run.body.translated, 100);
+
+  const exp = await get(`/api/translate/jobs/${r.body.jobId}/export?format=json&locale=ja`);
+  const out = typeof exp.body === 'string' ? JSON.parse(exp.body) : exp.body;
+  assert.strictEqual(Object.keys(out).length, 150);          // structure intact
+  assert.notStrictEqual(out.k0, 'Translate me 0');           // free part translated
+  assert.strictEqual(out.k149, 'Translate me 149');          // locked part keeps source
+
+  const detail = await get(`/api/translate/jobs/${r.body.jobId}`);
+  assert.strictEqual(detail.body.unlock.paymentEnabled, false);
+  assert.ok(detail.body.unlock.label.length > 0);
+
+  const pkg = await fetch(`${base}/api/translate/jobs/${r.body.jobId}/export?format=package`, { headers: { cookie } });
+  const buf = Buffer.from(await pkg.arrayBuffer());
+  assert.strictEqual(buf.readUInt16LE(0), 0x4b50);           // valid zip
+});
+
+test('font recommendation, coverage refusal and config generation', async () => {
+  const rec = await get('/api/fonts/recommend?lang=ja');
+  assert.strictEqual(rec.status, 200);
+  assert.deepStrictEqual(rec.body.requiredScripts, ['latin', 'kana', 'cjk']);
+  assert.ok(rec.body.recommendations.some((f) => f.id === 'noto-sans-jp'));
+  assert.ok(rec.body.recommendations.every((f) => f.fileAvailable === false));
+
+  const de = await get('/api/fonts/recommend?lang=de');
+  assert.strictEqual(de.body.keepCurrentFont, true);
+
+  const bad = await post('/api/fonts/config', { lang: 'ja', fontId: 'inter' });
+  assert.strictEqual(bad.status, 400);
+
+  const cfg = await post('/api/fonts/config', { lang: 'ja', fontId: 'noto-sans-jp' });
+  assert.strictEqual(cfg.status, 200);
+  assert.ok(cfg.body.css.includes('display=swap') || cfg.body.css.includes('font-display: swap'));
+  assert.ok(cfg.body.css.includes('@import'));
+  assert.ok(!/<link[^>]*preload/i.test(cfg.body.css));
+  assert.strictEqual(cfg.body.filename, 'font-config-ja.css');
+
+  const pkg = await fetch(`${base}/api/fonts/package?lang=ja&fontId=noto-sans-jp`);
+  const pbuf = Buffer.from(await pkg.arrayBuffer());
+  assert.strictEqual(pbuf.readUInt16LE(0), 0x4b50);
+
+  const tiers = await get('/api/fonts/tiers');
+  assert.ok(tiers.body.tiers.free && tiers.body.tiers.typographyPack);
+  assert.strictEqual(tiers.body.paymentEnabled, false);
+});
+
+test('font selection can be saved on a job and lands in the package', async () => {
+  const json = { a: 'Hello', b: 'Welcome {name}' };
+  const r = await post('/api/translate/jobs', { sourceLanguage: 'en', targetLanguages: ['ja'], json });
+  const jobId = r.body.jobId;
+  const save = await post(`/api/translate/jobs/${jobId}/fonts`, { selections: [{ lang: 'ja', fontId: 'noto-sans-jp' }] });
+  assert.strictEqual(save.status, 200);
+  assert.strictEqual(save.body.selections[0].fontId, 'noto-sans-jp');
+
+  // an unknown font id is silently dropped
+  const save2 = await post(`/api/translate/jobs/${jobId}/fonts`, { selections: [{ lang: 'ja', fontId: 'nope' }] });
+  assert.strictEqual(save2.body.selections.length, 0);
+
+  const pkg = await fetch(`${base}/api/translate/jobs/${jobId}/export?format=package`, { headers: { cookie } });
+  const buf = Buffer.from(await pkg.arrayBuffer());
+  assert.strictEqual(buf.readUInt16LE(0), 0x4b50);
 });

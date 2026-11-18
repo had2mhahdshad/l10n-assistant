@@ -13,6 +13,7 @@
 const config = require('../config');
 const { getDb } = require('../db');
 const { DIMENSIONS, ISSUE_DIMENSION, SCORE_MODEL } = require('./checker/scorer');
+const fontCatalog = require('../data/fontCatalog');
 
 const SEVERITY_WEIGHT = { high: 1, medium: 0.5, low: 0.25 };
 
@@ -39,10 +40,44 @@ const DEFAULTS = {
     userAuditMonthly: config.quota.userAuditMonthly,
     freeReportFullExamples: config.quota.freeReportFullExamples,
     freeTranslateStrings: config.quota.freeTranslateStrings,
+    freeUrlPagesPerJob: config.quota.freeUrlPagesPerJob,
+    freeJsonStringsPerJob: config.quota.freeJsonStringsPerJob,
+    freeJsonCharsPerJob: config.quota.freeJsonCharsPerJob,
+  },
+  // ── Translation product rules (admin-configurable, never hardcoded) ─────
+  translation: {
+    enabledTargetLocales: ['en', 'ja', 'de', 'fr', 'zh'],
+    freeLocales: ['en', 'ja', 'de', 'fr', 'zh'],
+    sourceLocales: ['en', 'zh', 'zh-CN', 'ja', 'de', 'fr'],
+    // Hard MVP ceiling on pages fetched from a URL, independent of quota.
+    mvpUrlPageLimit: 3,
+    urlNotFullSite: true,
+    allowDownloadOfFreePortion: true,
+  },
+  // ── Font recommendation data (drives all recommendations / licenses) ───
+  fonts: {
+    enabled: true,
+    defaultFontDisplay: 'swap',
+    cdnCacheSeconds: 31536000,
+    tiers: {
+      free: { label: 'Free', price: null, currency: 'CNY', note: 'System-font recommendations and CSS fallback configuration.' },
+      typographyPack: { label: 'Typography Pack', price: null, currency: 'CNY', note: 'Premium font recommendations, config files and licensed font resources. Quoted separately.' },
+      professionalLocalization: { label: 'Professional Localization', price: null, currency: 'CNY', note: 'Translation + human review + typography adaptation, quoted per project.' },
+    },
+    catalog: fontCatalog.CATALOG,
+  },
+  // ── Commercialisation (pricing / tiers are data, not code) ──────────────
+  commerce: {
+    currency: 'CNY',
+    contactUrl: '/professional',
+    paymentEnabled: false,
+    // Empty = use the localised default from i18n; an admin may override.
+    quoteNote: '',
+    unlockLabel: '',
   },
 };
 
-const KEYS = ['ai', 'scoring', 'quota'];
+const KEYS = ['ai', 'scoring', 'quota', 'translation', 'fonts', 'commerce'];
 // Cache is per-database-instance so tests using a temp DB never leak config
 // into the production connection (and vice versa).
 let cacheMap = new WeakMap();
@@ -80,6 +115,9 @@ function getSettings(db = getDb()) { return load(db); }
 function getAiConfig(db = getDb()) { return { ...load(db).ai }; }
 function getScoringConfig(db = getDb()) { return JSON.parse(JSON.stringify(load(db).scoring)); }
 function getQuotaConfig(db = getDb()) { return { ...load(db).quota }; }
+function getTranslationConfig(db = getDb()) { return JSON.parse(JSON.stringify(load(db).translation)); }
+function getFontsConfig(db = getDb()) { return JSON.parse(JSON.stringify(load(db).fonts)); }
+function getCommerceConfig(db = getDb()) { return JSON.parse(JSON.stringify(load(db).commerce)); }
 function clearSettingsCache() { cacheMap = new WeakMap(); }
 
 /** Payload safe to send to the browser: never includes the raw API key. */
@@ -100,6 +138,9 @@ function publicSettings(db = getDb()) {
     },
     scoring: JSON.parse(JSON.stringify(s.scoring)),
     quota: { ...s.quota },
+    translation: JSON.parse(JSON.stringify(s.translation)),
+    fonts: JSON.parse(JSON.stringify(s.fonts)),
+    commerce: JSON.parse(JSON.stringify(s.commerce)),
   };
 }
 
@@ -175,12 +216,130 @@ function validateQuota(patch, current) {
   return out;
 }
 
+// ── validators for the new runtime config groups ──────────────────────────
+
+function strList(v, current, max = 32) {
+  if (!Array.isArray(v)) return current;
+  const out = [...new Set(v.filter((x) => typeof x === 'string' && x.trim())
+    .map((x) => x.trim().slice(0, 40)))];
+  return out.length ? out.slice(0, max) : current;
+}
+
+function safeHttpUrl(v) {
+  const t = String(v || '').trim();
+  if (!t) return '';
+  try { const u = new URL(t); return ['http:', 'https:'].includes(u.protocol) ? t : ''; }
+  catch { return ''; }
+}
+
+function validateTranslation(patch, current) {
+  const out = { ...current };
+  for (const k of ['enabledTargetLocales', 'freeLocales', 'sourceLocales']) {
+    if (patch[k] !== undefined) out[k] = strList(patch[k], current[k]);
+  }
+  if (patch.mvpUrlPageLimit !== undefined) {
+    out.mvpUrlPageLimit = Math.round(num(patch.mvpUrlPageLimit, out.mvpUrlPageLimit, 1, 100));
+  }
+  for (const k of ['urlNotFullSite', 'allowDownloadOfFreePortion']) {
+    if (patch[k] !== undefined) out[k] = !!patch[k];
+  }
+  return out;
+}
+
+/** Clean one font record. Hard rule: a font may only be bundled when its
+ *  license explicitly allows redistribution. */
+function cleanFont(f) {
+  if (!f || typeof f !== 'object') return null;
+  const id = String(f.id || '').trim().slice(0, 80);
+  const name = String(f.name || '').trim().slice(0, 120);
+  const family = String(f.family || '').trim().slice(0, 400);
+  if (!id || !name || !family) return null;
+  const lic = (f.license && typeof f.license === 'object') ? f.license : {};
+  const license = {
+    name: String(lic.name || 'Unknown').trim().slice(0, 200),
+    url: safeHttpUrl(lic.url),
+    allowRedistribution: !!lic.allowRedistribution,
+    scope: String(lic.scope || '').trim().slice(0, 400),
+  };
+  const provider = ['system', 'online', 'self-host'].includes(f.provider) ? f.provider : 'system';
+  return {
+    id, name, family,
+    style: String(f.style || '').trim().slice(0, 200),
+    scripts: strList(f.scripts, ['latin'], 16),
+    provider,
+    useCase: String(f.useCase || '').trim().slice(0, 300),
+    license,
+    sourceUrl: safeHttpUrl(f.sourceUrl),
+    downloadUrl: safeHttpUrl(f.downloadUrl),
+    cssUrl: safeHttpUrl(f.cssUrl),
+    // Even an admin cannot mark an unlicensed font as packagable.
+    packagable: !!f.packagable && license.allowRedistribution === true,
+    tier: ['free', 'typography-pack'].includes(f.tier) ? f.tier : 'free',
+    woff2: !!f.woff2,
+    weightRange: String(f.weightRange || '').trim().slice(0, 80),
+    unicodeRange: f.unicodeRange ? String(f.unicodeRange).slice(0, 1200) : null,
+    notes: String(f.notes || '').trim().slice(0, 600),
+  };
+}
+
+function cleanTier(t, current) {
+  if (!t || typeof t !== 'object') return current;
+  const price = (t.price === null || t.price === '' || t.price === undefined)
+    ? null
+    : (Number.isFinite(Number(t.price)) ? Number(t.price) : current.price);
+  return {
+    label: String(t.label || current.label).slice(0, 80),
+    price,
+    currency: String(t.currency || current.currency).slice(0, 8),
+    note: String(t.note || current.note).slice(0, 400),
+  };
+}
+
+function validateFonts(patch, current) {
+  const out = JSON.parse(JSON.stringify(current));
+  if (patch.enabled !== undefined) out.enabled = !!patch.enabled;
+  if (patch.defaultFontDisplay !== undefined) {
+    const d = String(patch.defaultFontDisplay);
+    if (['swap', 'optional', 'fallback', 'block', 'auto'].includes(d)) out.defaultFontDisplay = d;
+  }
+  if (patch.cdnCacheSeconds !== undefined) {
+    out.cdnCacheSeconds = Math.round(num(patch.cdnCacheSeconds, out.cdnCacheSeconds, 0, 315360000));
+  }
+  if (patch.tiers && typeof patch.tiers === 'object') {
+    for (const k of Object.keys(out.tiers)) {
+      if (patch.tiers[k]) out.tiers[k] = cleanTier(patch.tiers[k], out.tiers[k]);
+    }
+  }
+  if (patch.catalog !== undefined) {
+    if (!Array.isArray(patch.catalog)) throw new Error('fonts.catalog must be an array');
+    const cleaned = patch.catalog.map(cleanFont).filter(Boolean);
+    if (!cleaned.length) throw new Error('fonts.catalog must contain at least one valid font');
+    const seen = new Set();
+    out.catalog = [];
+    for (const f of cleaned) if (!seen.has(f.id)) { seen.add(f.id); out.catalog.push(f); }
+  }
+  return out;
+}
+
+function validateCommerce(patch, current) {
+  const out = { ...current };
+  if (patch.currency !== undefined) out.currency = String(patch.currency).trim().slice(0, 8) || current.currency;
+  if (patch.contactUrl !== undefined) out.contactUrl = String(patch.contactUrl).trim().slice(0, 200) || current.contactUrl;
+  if (patch.paymentEnabled !== undefined) out.paymentEnabled = !!patch.paymentEnabled;
+  if (patch.quoteNote !== undefined) out.quoteNote = String(patch.quoteNote).trim().slice(0, 400) || current.quoteNote;
+  if (patch.unlockLabel !== undefined) out.unlockLabel = String(patch.unlockLabel).trim().slice(0, 120) || current.unlockLabel;
+  return out;
+}
+
 /** Persist a partial patch. Returns the updated public payload. */
 function saveSettings(db, patch = {}) {
   const s = JSON.parse(JSON.stringify(load(db)));
   if (patch.ai) s.ai = validateAi(patch.ai, s.ai);
   if (patch.scoring) s.scoring = validateScoring(patch.scoring, s.scoring);
   if (patch.quota) s.quota = validateQuota(patch.quota, s.quota);
+  if (patch.translation) s.translation = validateTranslation(patch.translation, s.translation);
+  if (patch.fonts) s.fonts = validateFonts(patch.fonts, s.fonts);
+  if (patch.commerce) s.commerce = validateCommerce(patch.commerce, s.commerce);
 
   const now = new Date().toISOString();
   const stmt = db.prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -205,5 +364,6 @@ function previewScoringConfig(patch = {}, db = getDb()) {
 
 module.exports = {
   DEFAULTS, getSettings, getAiConfig, getScoringConfig, getQuotaConfig,
+  getTranslationConfig, getFontsConfig, getCommerceConfig,
   publicSettings, saveSettings, resetSettings, clearSettingsCache, previewScoringConfig,
 };

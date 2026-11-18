@@ -157,6 +157,61 @@
 | `csv` | 双语/多语对照表 |
 | `report` | QA 报告（Markdown） |
 
+### `POST /api/translate/url` — 网站 URL 输入翻译
+
+与 JSON 上传走同一条任务/额度/导出管线。请求体在 `POST /api/translate/jobs` 的字段之外增加 `websiteUrl`（必填）。
+
+- MVP 限制：最多扫描 `min(freeUrlPagesPerJob, mvpUrlPageLimit)` 个公开页面（默认 3），爬取深度 1
+- 返回 `scan`：`scannedPages`（已扫描页面数，如实展示）、`failedPages`、`discoveredPages`、`maxPages`、`segmentCount`、`nonTranslatable`、`limitations`、`complete: false`
+- 输出标准化 JSON（`pages[].url` + `pages[].segments`），**不是**项目源代码，**不承诺**兼容任何 i18n 框架
+- `translate="no"` / `.notranslate` 的内容在提取前即被剔除
+
+### Free + Paid 额度（按任务计，部分翻译）
+
+| 维度 | 默认值（后台可改） | 说明 |
+|---|---|---|
+| URL：每任务页面数 | 3 | 仅实际抓取的页面计入 |
+| JSON：每任务每语言字符串数 | 100 | 多目标语言**分别计量** |
+| JSON：每任务每语言字符数 | 20000（0 = 不限） | 与字符串数同时生效 |
+| 账号累计上限（旧） | 0 = 关闭 | 可作为附加上限 |
+
+超额**不会拒绝任务**：免费部分照常翻译并可完整下载，其余内容保留原文并在 `quota.locked` / `lockedKeys` / `translation-manifest.json` 中如实标注。`unlock` 对象提供解锁入口（第一阶段无在线支付，`paymentEnabled: false`）。
+
+### `POST /api/translate/jobs/:id/fonts` — 保存任务级字体选择
+
+`{ selections: [{ lang, fontId }] }`。仅接受字符覆盖与授权校验通过的字体；未知或不合规的项被静默丢弃。字体功能与 JSON 翻译**相互独立**，可以只下载翻译文件。
+
+### `GET /api/translate/jobs/:id/export?format=package` — 本地化整合包
+
+```
+localization-package/
+  locales/ja.json, de.json …
+  fonts/README.md            ← 仅含授权与官方下载链接；无二进制
+  styles/font-config.css     ← 聚合入口（仅用户选定语言）
+  styles/font-config-ja.css
+  translation-manifest.json  ← 免费额度内已译 / 锁定内容的清单
+  README.md
+```
+
+未选择字体时保持原有 JSON 下载逻辑不变。
+
+### 字体公开 API
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/fonts/recommend?lang=ja&tier=free` | 按语言返回所需字符覆盖（如 ja = latin+kana+cjk）、推荐字体（名称/风格/场景/授权/来源）、`keepCurrentFont` 建议（de/fr 建议沿用拉丁字体，不强制单独字体） |
+| `GET` | `/api/fonts/tiers` | 商业化层级与价格（数据驱动，未配置 = 单独报价） |
+| `POST` | `/api/fonts/config` | `{ lang, fontId }` → 生成 CSS 与集成说明（不落库） |
+| `GET` | `/api/fonts/css?lang=&fontId=` | 下载单个 `font-config-<lang>.css` |
+| `GET` | `/api/fonts/package?lang=&fontId=` | 字体配置 ZIP（styles/ + fonts/README + README），不含 locale JSON |
+
+字体目录、授权、下载链接、层级价格全部存于 `app_settings`（后台字体资源数据），可在 `/admin/settings` 修改。约束：
+
+- 配置层强制：`packagable` 仅在 `license.allowRedistribution === true` 时可为真
+- 本阶段不打包任何字体二进制；`downloadUrl` 一律指向官方来源
+- CSS 规则：`font-display: swap`（可配）、WOFF2、`unicode-range` 子集化、**不**默认 preload、加载失败回退系统字体、不阻塞正文渲染
+- 不做在线字体预览、动态裁切、字体 CDN、自动修改用户网站代码（第一阶段范围）
+
 ## Professional Service（人工服务线索）
 
 ### `POST /api/leads` — 提交需求

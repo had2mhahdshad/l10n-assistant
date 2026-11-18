@@ -5,6 +5,7 @@
 const express = require('express');
 const { LANG_NAMES } = require('../lib/extractor');
 const { pickLang, translator, clientDict, normLang } = require('../lib/i18n');
+const { getTranslationConfig, getQuotaConfig } = require('../lib/settings');
 
 const r = express.Router();
 
@@ -253,6 +254,7 @@ r.get('/checker', (req, res) => {
       </div>
       <button class="btn primary" id="runWebsite" type="button">${esc(T('checker.runWebsite'))}</button>
       <span class="tiny subtle" id="quotaHint" style="margin-left:12px">${esc(T('checker.quotaHint'))}</span>
+      <div class="notice info tiny mt-2">${esc(T('checker.completeHint'))}</div>
     </div>
   </div>
 
@@ -306,6 +308,12 @@ r.get('/report/:id', (req, res) => {
 // ── Translation: new job ─────────────────────────────────────────────────
 r.get('/translate', (req, res) => {
   const { lang, T, path } = ctx(req, res);
+  const tCfg = getTranslationConfig();
+  const qCfg = getQuotaConfig();
+  const targets = tCfg.enabledTargetLocales;
+  const pageLimit = Math.max(1, Math.min(qCfg.freeUrlPagesPerJob, tCfg.mvpUrlPageLimit));
+  const limits = ['url.notFullSite', 'url.notSourceCode', 'url.frameworkCompat', 'url.pageLimit']
+    .map((k) => `<li>${esc(T(k))}</li>`).join('');
   res.send(layout({
     lang, T, path,
     title: T('tr.title'),
@@ -314,14 +322,49 @@ r.get('/translate', (req, res) => {
     body: `
 <div class="container" style="padding:48px 0">
   <div class="section-head"><span class="no">01</span><h2>${esc(T('tr.head'))}</h2><span class="rule"></span><span class="badge blue">${esc(T('tr.badge'))}</span></div>
-  <div class="notice info">
-    <b>${esc(T('tr.noticeLabel'))}</b> ${esc(T('tr.notice'))}
+  <div class="notice info"><b>${esc(T('tr.noticeLabel'))}</b> ${esc(T('tr.notice'))}</div>
+
+  <div class="pill-tabs" role="tablist">
+    <button id="tabJson" class="active" type="button">${esc(T('tr.tabJson'))}</button>
+    <button id="tabUrl" type="button">${esc(T('url.tab'))}</button>
   </div>
-  <div class="form-panel paper">
-    <div class="field">
-      <label for="jsonInput"><b>${esc(T('tr.jsonLabel'))}</b></label>
-      <textarea id="jsonInput" style="min-height:180px" placeholder='{"nav":{"home":"Home"},"cta":{"start":"Get started"}}' spellcheck="false"></textarea>
-      <div class="hint"><input type="file" id="jsonFile" accept=".json,application/json" /> <span id="fileName" class="subtle"></span></div>
+
+  <div id="paneJson">
+    <div class="form-panel paper">
+      <div class="field">
+        <label for="jsonInput"><b>${esc(T('tr.jsonLabel'))}</b></label>
+        <textarea id="jsonInput" style="min-height:160px" placeholder='{"nav":{"home":"Home"},"cta":{"start":"Get started"}}' spellcheck="false"></textarea>
+        <div class="hint"><input type="file" id="jsonFile" accept=".json,application/json" /> <span id="fileName" class="subtle"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="paneUrl" class="hidden">
+    <div class="form-panel paper">
+      <div class="notice warn">
+        <b>${esc(T('url.partialBadge'))}</b>
+        <ul class="nt-list">${limits}</ul>
+      </div>
+      <div class="field">
+        <label for="websiteUrl"><b>${esc(T('url.inputLabel'))}</b></label>
+        <input type="url" id="websiteUrl" placeholder="${esc(T('url.inputPh'))}" />
+      </div>
+      <div class="small subtle">${esc(T('url.pageLimitHint').replace('{n}', pageLimit))}</div>
+    </div>
+  </div>
+
+  <div class="form-panel paper mt-3">
+    <div class="field-row cols-2">
+      <div class="field">
+        <label for="tSourceLang"><b>${esc(T('tr.srcLang'))}</b></label>
+        <select id="tSourceLang">${langOptions(tCfg.sourceLocales, 'en')}</select>
+      </div>
+      <div class="field">
+        <label><b>${esc(T('tr.tgtLangs'))}</b></label>
+        <div style="display:flex;gap:16px;padding-top:10px;flex-wrap:wrap">
+          ${targets.map((l) => `<label class="checkbox-line"><input type="checkbox" class="t-target" value="${esc(l)}" ${l === (targets.includes('ja') ? 'ja' : (targets.find((x) => x !== 'en') || targets[0])) ? 'checked' : ''} /> ${esc(T('lang.' + l))}</label>`).join('')}
+        </div>
+      </div>
     </div>
     <div class="field-row cols-2">
       <div class="field">
@@ -331,20 +374,6 @@ r.get('/translate', (req, res) => {
       <div class="field">
         <label for="filename">${esc(T('tr.fileName'))}</label>
         <input type="text" id="filename" value="common.json" />
-      </div>
-    </div>
-    <div class="field-row cols-2">
-      <div class="field">
-        <label for="tSourceLang"><b>${esc(T('tr.srcLang'))}</b></label>
-        <select id="tSourceLang">${langOptions(['en', 'zh', 'zh-CN'], 'en')}</select>
-      </div>
-      <div class="field">
-        <label><b>${esc(T('tr.tgtLangs'))}</b></label>
-        <div style="display:flex;gap:18px;padding-top:10px">
-          <label class="checkbox-line"><input type="checkbox" class="t-target" value="ja" checked /> ${esc(T('lang.ja'))}</label>
-          <label class="checkbox-line"><input type="checkbox" class="t-target" value="de" /> ${esc(T('lang.de'))}</label>
-          <label class="checkbox-line"><input type="checkbox" class="t-target" value="fr" /> ${esc(T('lang.fr'))}</label>
-        </div>
       </div>
     </div>
     <div class="field-row cols-2">
@@ -374,7 +403,7 @@ r.get('/translate', (req, res) => {
       <label for="ignoreKeys">${esc(T('tr.ignore'))}</label>
       <input type="text" id="ignoreKeys" placeholder="^config\\., ^meta\\." />
     </div>
-    <button class="btn sky" id="createJob" type="button">${esc(T('tr.create'))}</button>
+    <button class="btn primary" id="createJob" type="button">${esc(T('tr.create'))}</button>
     <span id="createStatus" class="tiny" style="margin-left:12px"></span>
   </div>
 </div>`,

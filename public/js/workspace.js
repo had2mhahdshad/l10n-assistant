@@ -11,6 +11,7 @@
   function statusLabel(s) { var k = 'st.' + s; var v = T(k); return v === k ? s : v; }
   var readOnly = false; // true when opened through a read-only share link
   var lastMsg = null; // survives re-render so action feedback is not lost
+  var fontRecs = {}; // locale -> recommendation payload (loaded on demand)
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -55,6 +56,66 @@
 
     var statusCounts = {};
     data.entries.forEach(function (e) { statusCounts[e.status] = (statusCounts[e.status] || 0) + 1; });
+
+    // ── URL scan coverage + Free quota + optional font panel ────────────
+    var q = data.quota || null;
+    var scan = data.scanMeta || null;
+    var extra = '';
+
+    if (scan) {
+      var lim = (scan.limitations || []).map(function (k) { return '<li>' + esc(T(k)) + '</li>'; }).join('');
+      extra += '<div class="notice warn mt-3"><b>' + esc(T('ws.urlNoticeTitle')) + '</b>' +
+        '<div class="small mt-1">' + esc(T('ws.sourceType.url')) + ' · ' +
+          '<a class="report-url" href="' + esc(scan.startUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(scan.startUrl) + '</a></div>' +
+        '<div class="small mt-1">' +
+          esc(T('url.scannedLabel')) + ': <b>' + (scan.scannedPages || 0) + '</b> / ' + (scan.maxPages || 0) +
+          ' · ' + esc(T('url.failedLabel')) + ': ' + (scan.failedPages || 0) +
+          ' · ' + esc(T('url.discoveredLabel')) + ': ' + (scan.discoveredPages || 0) +
+          ' · ' + esc(T('url.segmentLabel')) + ': ' + (scan.segmentCount || 0) + '</div>' +
+        '<ul class="nt-list">' + lim + '</ul></div>';
+    }
+
+    if (q) {
+      var lockedSample = (data.lockedKeys || []).slice(0, 12)
+        .map(function (k) { return '<code class="mono tiny">' + esc(k) + '</code>'; }).join(' ');
+      var unlock = data.unlock || {};
+      extra += '<div class="quota-bar paper mt-3">' +
+        '<div class="quota-head"><b>' + esc(T('ws.quotaTitle')) + '</b>' +
+          '<span class="badge ' + (q.paywall ? 'yellow' : 'green') + '">' +
+            (q.paywall ? esc(T('url.partialBadge')) : 'OK') + '</span></div>' +
+        '<div class="quota-stats">' +
+          '<div><div class="qnum">' + (q.usedUnits || 0) + '</div><div class="qlabel">' + esc(T('ws.quotaUsed')) + '</div></div>' +
+          '<div><div class="qnum">' + (q.freeUnitsRemaining || 0) + '</div><div class="qlabel">' + esc(T('ws.quotaRemaining')) + '</div></div>' +
+          '<div class="risk"><div class="qnum">' + (data.lockedStrings || 0) + '</div><div class="qlabel">' + esc(T('ws.quotaLocked')) + '</div></div>' +
+        '</div>' +
+        '<div class="small mt-2">' + esc(T('ws.quotaPaywall')) + '</div>' +
+        (q.paywall
+          ? '<div class="quota-unlock mt-2"><a class="btn sm" href="' + esc(unlock.url || '/professional') +
+              '?job=' + encodeURIComponent(jobId) + '">' + esc(unlock.label || T('ws.unlockBtn')) + ' →</a>' +
+            '<span class="tiny subtle">' + esc(unlock.note || T('ws.unlockNote')) + '</span></div>'
+          : '') +
+        ((data.lockedKeys || []).length
+          ? '<details class="mt-2"><summary class="tiny">' + esc(T('ws.lockedKeysTitle')) + '</summary>' +
+            '<div class="mt-1">' + lockedSample + '</div></details>' : '') +
+        '</div>';
+    }
+
+    if (!readOnly || (data.fontConfig && data.fontConfig.selections && data.fontConfig.selections.length)) {
+      var fontSelects = p.targetLanguages.map(function (l) {
+        return '<div class="cfg-line"><label for="font_' + esc(l) + '">' + esc(l.toUpperCase()) + '</label>' +
+          '<select class="font-pick" id="font_' + esc(l) + '" data-lang="' + esc(l) + '"><option value="">—</option></select></div>';
+      }).join('');
+      extra += '<details class="font-panel paper mt-3" id="fontPanel">' +
+        '<summary>' + esc(T('font.title')) + '</summary>' +
+        '<div class="small subtle mt-2">' + esc(T('font.sub')) + '</div>' +
+        '<div class="mt-2">' + fontSelects + '</div>' +
+        '<div id="fontDetail" class="mt-2"></div>' +
+        (readOnly ? '' : '<button class="btn sm" id="saveFonts">' + esc(T('ws.saveFonts')) + '</button>') +
+        '<div class="mt-2"><a class="btn sm ghost" href="/api/translate/jobs/' + jobId +
+          '/export?format=package' + tokenQs() + '">' + esc(T('ws.exportPackage')) + '</a></div>' +
+        '<div class="tiny subtle mt-2">' + esc(T('font.notBundled')) + ' ' + esc(T('font.notPreview')) + '</div>' +
+        '</details>';
+    }
 
     var rows = data.entries.map(function (e) {
       var flags = issueByKey[e.locale + '::' + e.key] || [];
@@ -113,6 +174,7 @@
         return '<a class="btn sm ghost" href="/api/translate/jobs/' + jobId + '/export?format=json&locale=' + l + (shareToken ? '&t=' + encodeURIComponent(shareToken) : '') + '">' + l.toUpperCase() + ' ' + esc(T('ws.exportJson')) + '</a>';
       }).join('') +
       '<a class="btn sm ghost" href="/api/translate/jobs/' + jobId + '/export?format=zip' + tokenQs() + '">' + esc(T('ws.exportZip')) + '</a>' +
+      '<a class="btn sm" href="/api/translate/jobs/' + jobId + '/export?format=package' + tokenQs() + '">' + esc(T('ws.exportPackage')) + '</a>' +
       '<a class="btn sm ghost" href="/api/translate/jobs/' + jobId + '/export?format=csv' + tokenQs() + '">' + esc(T('ws.exportCsv')) + '</a>' +
       '<a class="btn sm ghost" href="/api/translate/jobs/' + jobId + '/export?format=report' + tokenQs() + '">' + esc(T('ws.exportReport')) + '</a>' +
       '<span class="spacer"></span><span id="wsMsg">' + (lastMsg ? badge(lastMsg.html, lastMsg.cls) : '') + '</span>' +
@@ -124,12 +186,13 @@
       (data.shareToken && !readOnly
         ? '<div class="notice info tiny mt-2"><b>' + esc(T('ws.shareLabel')) + '</b> ' +
           '<a href="?t=' + esc(data.shareToken) + '">' + esc(T('rep.shareLink')) + '</a> ' + esc(T('ws.shareHint')) + '</div>'
-        : '');
+        : '') + extra;
 
     bind();
   }
 
   function bind() {
+    bindFonts();
     if (readOnly) { // no write controls rendered
       Array.prototype.forEach.call(document.querySelectorAll('.act-save,.act-re,.act-approve,.act-skip'), function (b) { b.disabled = true; });
       return;
@@ -210,6 +273,79 @@
         }).then(load).catch(function (e) { msg('✕ ' + esc(e.message), 'error'); });
       });
     });
+  }
+
+  // ── Font recommendation (independent of the JSON translation) ─────────
+  function linkHost(u) { try { return new URL(u).host; } catch (e) { return 'link'; } }
+  function loadFonts() {
+    (data.project.targetLanguages || []).forEach(function (l) {
+      fetch('/api/fonts/recommend?lang=' + encodeURIComponent(l))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          fontRecs[l] = d;
+          var sel = document.getElementById('font_' + l);
+          if (!sel) return;
+          (d.recommendations || []).forEach(function (f) {
+            var o = document.createElement('option');
+            o.value = f.id;
+            o.textContent = f.name + ' · ' + f.provider;
+            sel.appendChild(o);
+          });
+          var saved = ((data.fontConfig && data.fontConfig.selections) || [])
+            .filter(function (x) { return x.lang === l; })[0];
+          if (saved) sel.value = saved.fontId;
+          renderFontDetail();
+        }).catch(function () { /* leave the select empty */ });
+    });
+  }
+
+  function renderFontDetail() {
+    var el = document.getElementById('fontDetail');
+    if (!el) return;
+    var parts = [];
+    Object.keys(fontRecs).forEach(function (l) {
+      var sel = document.getElementById('font_' + l);
+      if (!sel || !sel.value) return;
+      var f = ((fontRecs[l].recommendations) || []).filter(function (x) { return x.id === sel.value; })[0];
+      if (!f) return;
+      var prov = T('font.provider.' + f.provider);
+      parts.push('<div class="font-card">' +
+        '<div class="font-card-head"><b>' + esc(l.toUpperCase()) + ' · ' + esc(f.name) + '</b>' +
+        '<span class="badge">' + esc(prov === 'font.provider.' + f.provider ? f.provider : prov) + '</span></div>' +
+        '<div class="tiny">' + esc(T('font.license')) + ': ' + esc(f.license.name) +
+          (f.license.url ? ' <a href="' + esc(f.license.url) + '" target="_blank" rel="noopener noreferrer">↗</a>' : '') + '</div>' +
+        '<div class="tiny">' + esc(T('font.scope')) + ': ' + esc(f.license.scope) + '</div>' +
+        (f.sourceUrl ? '<div class="tiny">' + esc(T('font.source')) + ': <a href="' + esc(f.sourceUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(linkHost(f.sourceUrl)) + ' ↗</a></div>' : '') +
+        (f.downloadUrl ? '<div class="tiny">' + esc(T('font.download')) + ': <a href="' + esc(f.downloadUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(linkHost(f.downloadUrl)) + ' ↗</a></div>' : '') +
+        '<div class="tiny muted">' + esc(f.fileAvailable ? T('font.fileAvailable') : T('font.fileNotAvailable')) + '</div>' +
+        '<div class="tiny mt-1"><a href="/api/fonts/css?lang=' + encodeURIComponent(l) + '&fontId=' + encodeURIComponent(f.id) + '">' + esc(T('font.downloadCss')) + '</a> · ' +
+        '<a href="/api/fonts/package?lang=' + encodeURIComponent(l) + '&fontId=' + encodeURIComponent(f.id) + '">' + esc(T('font.downloadPack')) + '</a></div>' +
+        '</div>');
+    });
+    el.innerHTML = parts.join('') || '<div class="tiny subtle">' + esc(T('font.pickLabel')) + '</div>';
+  }
+
+  function bindFonts() {
+    var panel = document.getElementById('fontPanel');
+    if (!panel) return;
+    Array.prototype.forEach.call(document.querySelectorAll('.font-pick'), function (sel) {
+      sel.addEventListener('change', renderFontDetail);
+    });
+    var save = document.getElementById('saveFonts');
+    if (save) save.addEventListener('click', function () {
+      var selections = [];
+      Array.prototype.forEach.call(document.querySelectorAll('.font-pick'), function (sel) {
+        if (sel.value) selections.push({ lang: sel.getAttribute('data-lang'), fontId: sel.value });
+      });
+      fetch('/api/translate/jobs/' + jobId + '/fonts', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ selections: selections })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        data.fontConfig = { selections: d.selections || [] };
+        msg('✓ ' + esc(T('font.saved')), 'ok');
+      }).catch(function (e) { msg('✕ ' + esc(e.message), 'error'); });
+    });
+    loadFonts();
   }
 
   function badge(html, cls) {

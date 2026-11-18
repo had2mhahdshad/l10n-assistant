@@ -9,11 +9,11 @@ const { parseTranslatable, rebuildJson, verifyStructure, stats: jsonStats } = re
 const { translateEntries } = require('../lib/ai/translate');
 const quality = require('../lib/quality');
 const { buildCsv, buildQaReport, streamZip } = require('../lib/export');
-const { remainingTranslateQuota } = require('../lib/quota');
 const { pickLang, translator } = require('../lib/i18n');
-
-const SUPPORTED_TARGETS = ['ja', 'de', 'fr'];
-const SUPPORTED_SOURCES = ['en', 'zh', 'zh-CN'];
+const { getQuotaConfig, getTranslationConfig, getFontsConfig, getCommerceConfig } = require('../lib/settings');
+const { planQuota, snapshot } = require('../lib/translationQuota');
+const { urlToJson } = require('../lib/urlToJson');
+const fonts = require('../lib/fonts');
 
 module.exports = function translateRoutes(db) {
   const r = express.Router();
@@ -27,76 +27,160 @@ module.exports = function translateRoutes(db) {
     }
   };
 
-  // Create project + job from pasted/uploaded JSON. Returns job id.
+  // ── Shared job creation (JSON upload OR website URL) ───────────────────
+  // Both input modes converge here so quota, structure protection, export and
+  // the workspace behave identically. Free quota is enforced PER JOB; the free
+  // portion is ALWAYS translatable and downloadable, the rest is reported
+  // as locked content instead of blocking the whole job.
+  function createJobRecord(req, res, { json, sourceType = 'json', sourceUrl = null, scanMeta = null, body = {} }) {
+    const {
+      projectName, sourceLanguage, targetLanguages, filename,
+      productType, context, style, extra, brandTerms = [], glossary = [], ignoreKeys = [],
+    } = body;
+
+    if (!json || typeof json !== 'object' || Array.isArray(json)) {
+      return res.status(400).json({ error: 'json must be a JSON object (locale file).' });
+    }
+    const tCfg = getTranslationConfig(db);
+    if (!tCfg.sourceLocales.includes(sourceLanguage)) {
+      return res.status(400).json({ error: `Source language must be one of: ${tCfg.sourceLocales.join(', ')}` });
+    }
+    const targets = (Array.isArray(targetLanguages) ? targetLanguages : [])
+      .filter((t) => tCfg.enabledTargetLocales.includes(t));
+    if (!targets.length) {
+      return res.status(400).json({ error: `Target languages must include at least one of: ${tCfg.enabledTargetLocales.join(', ')}` });
+    }
+
+    const ignoreRules = (Array.isArray(ignoreKeys) ? ignoreKeys : []).map((p) => {
+      try { return new RegExp(p); } catch { return null; }
+    }).filter(Boolean);
+    const entries = parseTranslatable(json, { ignoreRules });
+    const translatable = entries.filter((e) => e.translatable);
+    const st = jsonStats(entries);
+    if (st.translatable === 0) {
+      return res.status(400).json({ error: 'No translatable strings found in this file.' });
+    }
+
+    // Optional legacy ACCOUNT-level cap (0 = disabled). Per-job limits are the
+    // primary rules; this is only an additional ceiling when explicitly set.
+    const qCfg = getQuotaConfig(db);
+    let accountRemaining = null;
+    if (qCfg.freeTranslateStrings > 0) {
+      const where = req.userId ? 'tp.user_id = ?' : 'tj.anon_id = ? AND tp.user_id IS NULL';
+      const arg = req.userId || req.anonId;
+      const row = db.prepare(
+        `SELECT COALESCE(SUM(tj.total_strings), 0) AS used
+         FROM translation_jobs tj JOIN translation_projects tp ON tp.id = tj.project_id
+         WHERE ${where}`
+      ).get(arg);
+      accountRemaining = Math.max(0, qCfg.freeTranslateStrings - (row.used || 0));
+    }
+
+    const plan = planQuota({
+      sourceType,
+      locales: targets,
+      strings: translatable.map((e) => ({ key: e.key, chars: e.chars || String(e.value).length })),
+      pages: scanMeta ? scanMeta.scannedPages : 0,
+      discoveredPages: scanMeta ? scanMeta.discoveredPages : 0,
+    }, { quota: qCfg, translation: tCfg, accountRemaining });
+
+    const quotaSnap = snapshot(plan);
+    const projectId = crypto.randomUUID();
+    const jobId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const defaultFilename = sourceType === 'url' ? 'url-content.json' : 'common.json';
+
+    db.prepare(`INSERT INTO translation_projects
+      (id, user_id, anon_id, project_name, source_language, target_languages, product_type, context, style, extra_requirements, brand_terms, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(projectId, req.userId, req.anonId, projectName || 'Untitled project', sourceLanguage,
+        JSON.stringify(targets), productType || null, context || null, style || 'product-neutral',
+        extra || null, JSON.stringify(brandTerms), now);
+
+    db.prepare(`INSERT INTO translation_jobs
+      (id, project_id, anon_id, source_file, filename, status, total_strings, created_at, share_token,
+       source_type, source_url, scanned_pages, scanned_note, non_translatable,
+       locked_strings, locked_keys, quota_snapshot)
+      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?,
+       ?, ?, ?, ?, ?,
+       ?, ?, ?)`)
+      .run(jobId, projectId, req.anonId, JSON.stringify(json), filename || defaultFilename,
+        st.translatable, now, newShareToken(),
+        sourceType, sourceUrl, scanMeta ? scanMeta.scannedPages : 0,
+        scanMeta ? JSON.stringify({
+          startUrl: scanMeta.startUrl, scannedPages: scanMeta.scannedPages,
+          failedPages: scanMeta.failedPages, discoveredPages: scanMeta.discoveredPages,
+          maxPages: scanMeta.maxPages, maxDepth: scanMeta.maxDepth,
+          segmentCount: scanMeta.segmentCount,
+          limitations: scanMeta.limitations, complete: false,
+        }) : null,
+        scanMeta ? JSON.stringify(scanMeta.nonTranslatable) : null,
+        plan.locked.units, JSON.stringify(plan.locked.keys), JSON.stringify(quotaSnap));
+
+    insertGlossary(projectId, glossary);
+
+    // Only the FREE portion becomes a translation entry. Locked strings are
+    // never sent to the AI, never billed, and remain original text on export.
+    const byKey = new Map(translatable.map((e) => [e.key, e]));
+    const ins = db.prepare(`INSERT INTO translation_entries
+      (job_id, locale, key, path, source_text, status) VALUES (?, ?, ?, ?, ?, 'pending')`);
+    for (const locale of targets) {
+      for (const key of (plan.grantedKeysByLocale[locale] || [])) {
+        const e = byKey.get(key);
+        if (e) ins.run(jobId, locale, key, JSON.stringify(e.path), e.value);
+      }
+    }
+
+    return res.status(201).json({
+      jobId, projectId, sourceType,
+      scan: scanMeta ? {
+        startUrl: scanMeta.startUrl,
+        scannedPages: scanMeta.scannedPages,
+        failedPages: scanMeta.failedPages,
+        discoveredPages: scanMeta.discoveredPages,
+        maxPages: scanMeta.maxPages,
+        segmentCount: scanMeta.segmentCount,
+        nonTranslatable: scanMeta.nonTranslatable,
+        limitations: scanMeta.limitations,
+        complete: false,
+      } : null,
+      stats: {
+        ...st,
+        billableUnits: plan.requested.units,
+        quota: quotaSnap,
+      },
+    });
+  }
+
+  // JSON upload (unchanged endpoint, now quota-aware).
   r.post('/api/translate/jobs', (req, res) => {
     try {
-      const {
-        projectName, sourceLanguage, targetLanguages, json, filename,
-        productType, context, style, extra, brandTerms = [], glossary = [],
-        ignoreKeys = [],
-      } = req.body || {};
-
-      if (!json || typeof json !== 'object' || Array.isArray(json)) {
-        return res.status(400).json({ error: 'json must be a JSON object (locale file).' });
-      }
-      if (!SUPPORTED_SOURCES.includes(sourceLanguage)) {
-        return res.status(400).json({ error: `Source language must be one of: ${SUPPORTED_SOURCES.join(', ')}` });
-      }
-      const targets = (Array.isArray(targetLanguages) ? targetLanguages : []).filter((t) => SUPPORTED_TARGETS.includes(t));
-      if (!targets.length) {
-        return res.status(400).json({ error: `Target languages must include at least one of: ${SUPPORTED_TARGETS.join(', ')}` });
-      }
-
-      const ignoreRules = (Array.isArray(ignoreKeys) ? ignoreKeys : []).map((p) => {
-        try { return new RegExp(p); } catch { return null; }
-      }).filter(Boolean);
-      const entries = parseTranslatable(json, { ignoreRules });
-      const st = jsonStats(entries);
-      if (st.translatable === 0) {
-        return res.status(400).json({ error: 'No translatable strings found in this file.' });
-      }
-
-      // Quota (module-independent).
-      const remaining = remainingTranslateQuota(db, { userId: req.userId, anonId: req.anonId });
-      const billableStrings = st.translatable * targets.length;
-      if (billableStrings > remaining) {
-        return res.status(429).json({
-          error: `Free quota exceeded: this job needs ${billableStrings} strings (${st.translatable} × ${targets.length} locales) but only ${remaining} remain.`,
-          code: 'QUOTA_EXCEEDED', remaining,
-        });
-      }
-
-      const projectId = crypto.randomUUID();
-      const jobId = crypto.randomUUID();
-      const now = new Date().toISOString();
-      db.prepare(`INSERT INTO translation_projects
-        (id, user_id, anon_id, project_name, source_language, target_languages, product_type, context, style, extra_requirements, brand_terms, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(projectId, req.userId, req.anonId, projectName || 'Untitled project', sourceLanguage,
-          JSON.stringify(targets), productType || null, context || null, style || 'product-neutral',
-          extra || null, JSON.stringify(brandTerms), now);
-      db.prepare(`INSERT INTO translation_jobs
-        (id, project_id, anon_id, source_file, filename, status, total_strings, created_at, share_token)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`)
-        .run(jobId, projectId, req.anonId, JSON.stringify(json), filename || 'common.json', st.translatable, now, newShareToken());
-      insertGlossary(projectId, glossary);
-
-      // Pre-create entry rows (pending) for every locale × translatable key.
-      const ins = db.prepare(`INSERT INTO translation_entries
-        (job_id, locale, key, path, source_text, status) VALUES (?, ?, ?, ?, ?, 'pending')`);
-      for (const locale of targets) {
-        for (const e of entries.filter((x) => x.translatable)) {
-          ins.run(jobId, locale, e.key, JSON.stringify(e.path), e.value);
-        }
-      }
-
-      res.status(201).json({
-        jobId, projectId,
-        stats: { ...st, billableStrings, quotaRemainingAfter: remaining - billableStrings },
-      });
+      return createJobRecord(req, res, { json: (req.body || {}).json, body: req.body || {} });
     } catch (err) {
       console.error(err);
-      res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Website URL input: scan within the MVP page limit, produce a standard
+  // JSON, then run the SAME job creation / quota / export pipeline.
+  r.post('/api/translate/url', async (req, res) => {
+    try {
+      const body = req.body || {};
+      if (!body.websiteUrl) return res.status(400).json({ error: 'websiteUrl is required.' });
+      const tCfg = getTranslationConfig(db);
+      const qCfg = getQuotaConfig(db);
+      const maxPages = Math.max(1, Math.min(qCfg.freeUrlPagesPerJob, tCfg.mvpUrlPageLimit));
+      const { json, meta } = await urlToJson(body.websiteUrl, { maxPages });
+      return createJobRecord(req, res, {
+        json, sourceType: 'url', sourceUrl: body.websiteUrl, scanMeta: meta, body,
+      });
+    } catch (err) {
+      console.error('[translate:url]', err);
+      return res.status(err.status || 500).json({
+        error: err.clientMessage || ('URL scan failed: ' + err.message),
+        detail: config.env === 'development' ? err.stack?.split('\n').slice(0, 3).join(' | ') : undefined,
+      });
     }
   });
 
@@ -108,9 +192,8 @@ module.exports = function translateRoutes(db) {
     const force = req.query.force === '1';
 
     const project = db.prepare('SELECT * FROM translation_projects WHERE id = ?').get(job.project_id);
-    const sourceJson = JSON.parse(job.source_file);
-    const parsed = parseTranslatable(sourceJson);
-    const translatable = parsed.filter((e) => e.translatable);
+    // Only entries granted by the per-job Free quota exist in the table.
+    // Locked strings are never sent to the AI and never billed.
     const locales = JSON.parse(project.target_languages).filter((l) => !onlyLocale || l === onlyLocale);
     const glossary = db.prepare('SELECT * FROM glossaries WHERE project_id = ?').all(project.id);
     const brandTerms = JSON.parse(project.brand_terms || '[]');
@@ -125,10 +208,11 @@ module.exports = function translateRoutes(db) {
     let totalTokens = 0, totalCost = 0, model = null, failedCount = 0, doneCount = 0;
     try {
       for (const locale of locales) {
-        const toTranslate = force
-          ? translatable
-          : translatable.filter((e) => !manualKeys.has(`${locale}::${e.key}`));
-        const skipped = translatable.length - toTranslate.length;
+        let rows = db.prepare('SELECT key, source_text FROM translation_entries WHERE job_id=? AND locale=? ORDER BY id')
+          .all(job.id, locale);
+        if (!force) rows = rows.filter((r) => !manualKeys.has(`${locale}::${r.key}`));
+        const toTranslate = rows.map((r) => ({ key: r.key, value: r.source_text }));
+        if (!toTranslate.length) continue;
 
         const { translations, failures, stats } = await translateEntries(toTranslate, {
           sourceLang: project.source_language,
@@ -159,7 +243,6 @@ module.exports = function translateRoutes(db) {
         }
         doneCount += translations.size;
         failedCount += failures.filter((f) => !f.keptTranslation).length;
-        if (skipped) doneCount += 0; // skipped entries keep their manual text
       }
 
       db.prepare(`UPDATE translation_jobs SET status='completed', translated_strings=?,
@@ -192,7 +275,24 @@ module.exports = function translateRoutes(db) {
       entries = entries.filter((e) => badKeys.has(`${e.locale}::${e.key}`));
     }
     const issues = db.prepare('SELECT * FROM quality_issues WHERE job_id = ? ORDER BY id').all(job.id);
+    const commerce = getCommerceConfig(db);
+    const T = translator(pickLang(req));
     res.json({
+      sourceType: job.source_type || 'json',
+      sourceUrl: job.source_url || null,
+      scannedPages: job.scanned_pages || 0,
+      scanMeta: job.scanned_note ? JSON.parse(job.scanned_note) : null,
+      nonTranslatable: job.non_translatable ? JSON.parse(job.non_translatable) : null,
+      quota: job.quota_snapshot ? JSON.parse(job.quota_snapshot) : null,
+      lockedKeys: job.locked_keys ? JSON.parse(job.locked_keys) : [],
+      lockedStrings: job.locked_strings || 0,
+      fontConfig: job.font_config ? JSON.parse(job.font_config) : null,
+      unlock: {
+        label: commerce.unlockLabel || T('ws.unlockBtn'),
+        url: commerce.contactUrl,
+        paymentEnabled: !!commerce.paymentEnabled,
+        note: commerce.quoteNote || T('ws.unlockNote'),
+      },
       job: {
         id: job.id, status: job.status, filename: job.filename,
         totalStrings: job.total_strings, translatedStrings: job.translated_strings,
@@ -346,6 +446,39 @@ module.exports = function translateRoutes(db) {
       localeData[locale] = out;
     }
 
+    if (format === 'package') {
+      const cfg = { fonts: getFontsConfig(db), commerce: getCommerceConfig(db) };
+      let selections = [];
+      if (job.font_config) {
+        try { selections = JSON.parse(job.font_config).selections || []; } catch { /* ignore */ }
+      }
+      if (!selections.length && req.query.fontId) {
+        selections = [{ lang: locales[0], fontId: String(req.query.fontId) }];
+      }
+      const fontConfigs = [];
+      for (const sel of selections) {
+        const lang = fonts.normalizeLocale(sel.lang);
+        if (!locales.includes(lang) && !locales.includes(String(sel.lang))) continue;
+        const f = fonts.findFont(sel.fontId, cfg);
+        if (!f || !fonts.covers(f, fonts.requiredScripts(lang))) continue;
+        if (!fonts.licenseAllows(f, 'config')) continue;
+        fontConfigs.push({ font: fonts.publicFont(f), config: fonts.buildConfigCss(lang, f, cfg) });
+      }
+      const manifest = {
+        sourceType: job.source_type || 'json',
+        locales,
+        totalTranslatableStrings: job.total_strings,
+        translatedEntries: rows.filter((r) => r.translated_text != null).length,
+        lockedStrings: job.locked_strings || 0,
+        lockedKeys: job.locked_keys ? JSON.parse(job.locked_keys) : [],
+        quota: job.quota_snapshot ? JSON.parse(job.quota_snapshot) : null,
+        note: 'Keys not translated within the Free quota are exported as ORIGINAL source text. The translated free portion is fully downloadable.',
+      };
+      const locFiles = locales.map((l) => ({ locale: l, content: JSON.stringify(localeData[l], null, 2) + '\n' }));
+      const files = fonts.buildLocalizationPackage({ locales: locFiles, fontConfigs, manifest, cfg });
+      return streamZip(res, files, 'localization-package.zip');
+    }
+
     if (format === 'json') {
       const locale = req.query.locale;
       if (!locale || !localeData[locale]) return res.status(400).json({ error: 'locale parameter required (json format).' });
@@ -385,6 +518,33 @@ module.exports = function translateRoutes(db) {
       { path: 'qa-report.md', content: buildQaReport(job, issues, null) },
     ];
     streamZip(res, files, 'locales.zip');
+  });
+
+  // Save optional font selections for a job. Fonts are INDEPENDENT of the
+  // JSON translation: a user may download only the locale files, or additionally
+  // request a font config / localization package.
+  r.post('/api/translate/jobs/:id/fonts', (req, res) => {
+    const job = getOwnedJob(db, req, res);
+    if (!job) return;
+    const cfg = { fonts: getFontsConfig(db), commerce: getCommerceConfig(db) };
+    const project = db.prepare('SELECT target_languages FROM translation_projects WHERE id = ?').get(job.project_id);
+    const targets = JSON.parse(project.target_languages);
+    const input = Array.isArray(req.body?.selections) ? req.body.selections : [];
+    const cleaned = [];
+    const seen = new Set();
+    for (const sel of input) {
+      const lang = fonts.normalizeLocale(sel.lang);
+      if (!targets.includes(lang) && !targets.includes(String(sel.lang))) continue;
+      const f = fonts.findFont(sel.fontId, cfg);
+      if (!f || !fonts.covers(f, fonts.requiredScripts(lang)) || !fonts.licenseAllows(f, 'config')) continue;
+      const k = lang + '::' + f.id;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      cleaned.push({ lang, fontId: f.id });
+    }
+    db.prepare('UPDATE translation_jobs SET font_config=? WHERE id=?')
+      .run(JSON.stringify({ selections: cleaned, updatedAt: new Date().toISOString() }), job.id);
+    res.json({ ok: true, selections: cleaned });
   });
 
   return r;

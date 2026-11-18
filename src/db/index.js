@@ -188,6 +188,28 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    id: 5,
+    name: 'translation_source_and_quota',
+    // AI Translation now also accepts a Website URL and uses a PER-JOB
+    // Free quota with partial translation. Everything is recorded so the UI
+    // can show used / remaining / locked content honestly.
+    //
+    // Font resources themselves live in app_settings (fonts.catalog) — a
+    // single admin-editable source of truth, not a duplicated table.
+    sql: `
+      ALTER TABLE translation_jobs ADD COLUMN source_type TEXT NOT NULL DEFAULT 'json';  -- json | url
+      ALTER TABLE translation_jobs ADD COLUMN source_url TEXT;
+      ALTER TABLE translation_jobs ADD COLUMN scanned_pages INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE translation_jobs ADD COLUMN scanned_note TEXT;
+      ALTER TABLE translation_jobs ADD COLUMN non_translatable TEXT;
+      ALTER TABLE translation_jobs ADD COLUMN locked_strings INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE translation_jobs ADD COLUMN locked_keys TEXT;
+      ALTER TABLE translation_jobs ADD COLUMN quota_snapshot TEXT;
+      ALTER TABLE translation_jobs ADD COLUMN font_config TEXT;
+      CREATE INDEX idx_tjobs_source ON translation_jobs(source_type);
+    `,
+  },
 ];
 
 let dbInstance = null;

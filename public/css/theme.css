@@ -568,3 +568,20 @@ html[lang="zh-CN"] .hero h1 { font-size: clamp(36px, 4.2vw, 56px); letter-spacin
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+
+/* ── quota bar / font recommendation panel ─────────────────── */
+.quota-bar { padding: 18px 22px; }
+.quota-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+.quota-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
+.quota-stats > div { border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; background: var(--cream); }
+.quota-stats > div.risk { border-color: #f0b429; background: var(--warn-soft); }
+.qnum { font: 800 26px var(--mono); color: var(--ink); line-height: 1.1; }
+.qlabel { font-size: 12px; color: var(--subtle); margin-top: 4px; }
+.quota-unlock { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.font-panel { padding: 18px 22px; }
+.font-panel > summary { cursor: pointer; font: 700 14px var(--body); }
+.font-card { border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; margin-bottom: 10px; background: var(--cream); }
+.font-card-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 13px; }
+.font-card a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; word-break: break-all; }
+@media (max-width: 520px) { .quota-stats { grid-template-columns: 1fr; } }

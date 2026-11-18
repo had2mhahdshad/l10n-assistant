@@ -51,6 +51,7 @@
 
   function render() {
     var ai = state.ai, sc = state.scoring, q = state.quota;
+    var tr = state.translation, fo = state.fonts, co = state.commerce;
     var dimKeys = Object.keys(sc.dimensions);
     var sevKeys = Object.keys(sc.severityWeight);
     var modelKeys = Object.keys(sc.model);
@@ -121,6 +122,35 @@
       numField('q_user', T('cfg.userMonthly'), q.userAuditMonthly, '1') +
       numField('q_examples', T('cfg.freeExamples'), q.freeReportFullExamples, '1') +
       '<div class="hint">' + esc(T('cfg.zeroNote')) + '</div>' +
+      '<div class="small muted mb-2 mt-3">' + esc(T('cfg.translationDesc')) + '</div>' +
+      numField('q_urlPages', T('cfg.urlPages'), q.freeUrlPagesPerJob, '1') +
+      numField('q_jsonStrings', T('cfg.jsonStrings'), q.freeJsonStringsPerJob, '1') +
+      numField('q_jsonChars', T('cfg.jsonChars'), q.freeJsonCharsPerJob, '100') +
+      '</section>' +
+
+      // ── Translation product rules ──
+      '<section class="form-panel paper"><div class="nt-title">' + esc(T('cfg.translationTitle')) + '</div>' +
+      '<div class="small muted mb-2">' + esc(T('cfg.translationDesc')) + '</div>' +
+      field('tr_targets', T('cfg.targetLocales'), tr.enabledTargetLocales.join(', ')) +
+      field('tr_free', T('cfg.freeLocales'), tr.freeLocales.join(', ')) +
+      numField('tr_mvp', T('cfg.mvpPages'), tr.mvpUrlPageLimit, '1') +
+      '</section>' +
+
+      // ── Font resources & commercialisation ──
+      '<section class="form-panel paper"><div class="nt-title">' + esc(T('cfg.fontsTitle')) + '</div>' +
+      '<div class="small muted mb-2">' + esc(T('cfg.fontsDesc')) + '</div>' +
+      '<div class="cfg-line"><label for="fo_enabled">' + esc(T('cfg.fontEnabled')) + '</label>' +
+      '<select id="fo_enabled"><option value="1"' + (fo.enabled ? ' selected' : '') + '>Yes</option>' +
+      '<option value="0"' + (!fo.enabled ? ' selected' : '') + '>No</option></select></div>' +
+      field('fo_display', T('cfg.fontDisplay'), fo.defaultFontDisplay) +
+      field('ti_free', T('cfg.tierFreePrice'), fo.tiers.free.price == null ? '' : fo.tiers.free.price) +
+      field('ti_pack', T('cfg.tierPackPrice'), fo.tiers.typographyPack.price == null ? '' : fo.tiers.typographyPack.price) +
+      field('ti_pro', T('cfg.tierProPrice'), fo.tiers.professionalLocalization.price == null ? '' : fo.tiers.professionalLocalization.price) +
+      field('co_currency', T('cfg.commerceCurrency'), co.currency) +
+      '<div class="cfg-line"><label for="co_payment">' + esc(T('cfg.paymentEnabled')) + '</label>' +
+      '<select id="co_payment"><option value="1"' + (co.paymentEnabled ? ' selected' : '') + '>Yes</option>' +
+      '<option value="0"' + (!co.paymentEnabled ? ' selected' : '') + '>No</option></select></div>' +
+      '<div class="hint">' + esc(T('cfg.catalogCount')) + ': ' + ((fo.catalog || []).length) + '</div>' +
       '</section>' +
       '</div>' +
 
@@ -158,8 +188,26 @@
       scoring: { dimensions: dimensions, severityWeight: severityWeight, model: model, issueDimension: issueDimension },
       quota: {
         anonAuditDaily: n('q_anon'), userAuditMonthly: n('q_user'),
-        freeReportFullExamples: n('q_examples')
-      }
+        freeReportFullExamples: n('q_examples'),
+        freeUrlPagesPerJob: n('q_urlPages'),
+        freeJsonStringsPerJob: n('q_jsonStrings'),
+        freeJsonCharsPerJob: n('q_jsonChars')
+      },
+      translation: {
+        enabledTargetLocales: v('tr_targets').split(',').map(function (x) { return x.trim(); }).filter(Boolean),
+        freeLocales: v('tr_free').split(',').map(function (x) { return x.trim(); }).filter(Boolean),
+        mvpUrlPageLimit: n('tr_mvp')
+      },
+      fonts: {
+        enabled: v('fo_enabled') === '1',
+        defaultFontDisplay: v('fo_display'),
+        tiers: {
+          free: Object.assign({}, state.fonts.tiers.free, { price: v('ti_free') }),
+          typographyPack: Object.assign({}, state.fonts.tiers.typographyPack, { price: v('ti_pack') }),
+          professionalLocalization: Object.assign({}, state.fonts.tiers.professionalLocalization, { price: v('ti_pro') })
+        }
+      },
+      commerce: { currency: v('co_currency'), paymentEnabled: v('co_payment') === '1' }
     };
     return patch;
   }
